@@ -1,0 +1,56 @@
+const router = require("express").Router();
+
+const {
+  validateBody,
+  validateQuery,
+  validateParams,
+} = require("../../../shared/middlewares/validate.wrapper");
+const authenticate = require("../../auth/auth.middleware");
+const { authorizePermission } = require("../../auth/auth.middleware");
+const controller = require("./category.controller");
+const {
+  listQuerySchema,
+  idParamSchema,
+  createSchema,
+  updateSchema,
+} = require("./category.validation");
+
+router.use(authenticate);
+
+router.get(
+  "/",
+  authorizePermission("catalog", "READ"),
+  validateQuery(listQuerySchema),
+  controller.list,
+);
+
+router.get(
+  "/:id",
+  authorizePermission("catalog", "READ"),
+  validateParams(idParamSchema),
+  controller.getById,
+);
+
+router.post(
+  "/",
+  authorizePermission("catalog", "CREATE"),
+  validateBody(createSchema),
+  controller.create,
+);
+
+router.patch(
+  "/:id",
+  authorizePermission("catalog", "UPDATE"),
+  validateParams(idParamSchema),
+  validateBody(updateSchema),
+  controller.update,
+);
+
+router.delete(
+  "/:id",
+  authorizePermission("catalog", "DELETE"),
+  validateParams(idParamSchema),
+  controller.remove,
+);
+
+module.exports = router;
