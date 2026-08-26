@@ -11,13 +11,11 @@ module.exports = (sequelize, DataTypes) => {
       name: {
         type: DataTypes.STRING,
         allowNull: false,
-        unique: true,
       },
 
       code: {
         type: DataTypes.STRING,
         allowNull: false,
-        unique: true,
       },
 
       address: {
@@ -35,6 +33,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
       status: {
         type: DataTypes.ENUM("ACTIVE", "INACTIVE"),
         allowNull: false,
@@ -49,6 +52,20 @@ module.exports = (sequelize, DataTypes) => {
   );
 
   Warehouse.associate = (models) => {
+    Warehouse.belongsTo(models.Company, {
+      foreignKey: "companyId",
+      as: "company",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    Warehouse.belongsToMany(models.User, {
+      through: models.UserWarehouse,
+      foreignKey: "warehouseId",
+      otherKey: "userId",
+      as: "users",
+    });
+
     Warehouse.hasMany(models.Inventory, {
       foreignKey: "warehouseId",
       as: "inventory",

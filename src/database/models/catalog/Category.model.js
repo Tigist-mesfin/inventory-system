@@ -8,10 +8,14 @@ module.exports = (sequelize, DataTypes) => {
         primaryKey: true,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
       name: {
         type: DataTypes.STRING,
         allowNull: false,
-        unique: true,
       },
 
       description: {

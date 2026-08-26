@@ -1,35 +1,37 @@
+const { Op } = require("sequelize");
 const models = require("../../database/models");
-const { rolePermissionInclude } = require("../../shared/middlewares/auth.middleware");
+const { userAccessInclude } = require("../../shared/middlewares/auth.middleware");
+const { mergedPermissions } = require("../../shared/helpers/tenant.helper");
+const phoneNormalize = require("../../shared/helpers/phoneNormalize.helper");
 
 const { User } = models;
 
-const activeRolePermissionsInclude = [
-  {
-    ...rolePermissionInclude,
-    where: { status: "ACTIVE" },
-    required: false,
-  },
-];
-
-exports.findByUsernameWithPassword = async (username) =>
-  User.scope("withPassword").findOne({
-    where: { username },
-    include: activeRolePermissionsInclude,
+exports.findByUsernameWithPassword = async (username) => {
+  const raw = String(username || "").trim();
+  const phone = phoneNormalize(raw);
+  const or = [{ username: raw }, { phone: raw }];
+  if (phone && phone !== raw) {
+    or.push({ username: phone }, { phone });
+  }
+  return User.scope("withPassword").findOne({
+    where: { [Op.or]: or },
+    include: userAccessInclude,
   });
+};
 
 exports.findById = async (id) =>
   User.findByPk(id, {
-    include: activeRolePermissionsInclude,
+    include: userAccessInclude,
   });
 
 exports.findByIdWithPassword = async (id) =>
   User.scope("withPassword").findByPk(id, {
-    include: activeRolePermissionsInclude,
+    include: userAccessInclude,
   });
 
 exports.findByIdWithRoleAndPermissions = async (id) =>
   User.findByPk(id, {
-    include: activeRolePermissionsInclude,
+    include: userAccessInclude,
   });
 
 exports.updateLastLoginAt = async (userId, date = new Date()) => {
@@ -60,8 +62,11 @@ exports.toPublicUser = (user) => {
       }
     : null;
 
-  const permissions = (plain.role?.permissions || [])
-    .filter((p) => p.status === "ACTIVE")
+  const permissions = mergedPermissions({
+    role: plain.role,
+    permissions: plain.permissions,
+  })
+    .filter((p) => !p.status || p.status === "ACTIVE")
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -77,6 +82,21 @@ exports.toPublicUser = (user) => {
     phone: plain.phone,
     status: plain.status,
     lastLoginAt: plain.lastLoginAt,
+    companyId: plain.companyId || null,
+    allWarehouses: Boolean(plain.allWarehouses),
+    company: plain.company
+      ? {
+          id: plain.company.id,
+          name: plain.company.name,
+          phone: plain.company.phone,
+          address: plain.company.address,
+        }
+      : null,
+    warehouses: (plain.warehouses || []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      code: row.code,
+    })),
     role,
     permissions,
   };

@@ -11,6 +11,9 @@ exports.listQuerySchema = Joi.object({
   status: Joi.string().valid("ACTIVE", "INACTIVE"),
   categoryId: uuid(),
   supplierId: uuid(),
+  brand: Joi.string().trim().max(64).allow(""),
+  size: Joi.string().trim().max(32).allow(""),
+  color: Joi.string().trim().max(32).allow(""),
 });
 
 exports.idParamSchema = Joi.object({
@@ -18,13 +21,17 @@ exports.idParamSchema = Joi.object({
 });
 
 exports.createSchema = Joi.object({
-  categoryId: uuid().required(),
+  categoryId: uuid().allow("", null),
   supplierId: uuid().allow(null),
-  sku: Joi.string().trim().min(1).max(64).required(),
+  sku: Joi.string().trim().min(1).max(64).allow("", null),
+  serialNumber: Joi.string().trim().max(64).allow("", null),
   barcode: Joi.string().trim().max(64).allow("", null),
   name: Joi.string().trim().min(1).max(128).required(),
+  brand: Joi.string().trim().max(64).allow("", null),
+  size: Joi.string().trim().max(32).allow("", null),
+  color: Joi.string().trim().max(32).allow("", null),
   description: Joi.string().trim().max(4000).allow("", null),
-  unit: Joi.string().trim().min(1).max(32),
+  unit: Joi.string().trim().min(1).max(32).required(),
   purchasePrice: money,
   sellingPrice: money,
   reorderLevel: qty,
@@ -38,8 +45,12 @@ exports.updateSchema = Joi.object({
   categoryId: uuid(),
   supplierId: uuid().allow(null),
   sku: Joi.string().trim().min(1).max(64),
+  serialNumber: Joi.string().trim().max(64).allow("", null),
   barcode: Joi.string().trim().max(64).allow("", null),
   name: Joi.string().trim().min(1).max(128),
+  brand: Joi.string().trim().max(64).allow("", null),
+  size: Joi.string().trim().max(32).allow("", null),
+  color: Joi.string().trim().max(32).allow("", null),
   description: Joi.string().trim().max(4000).allow("", null),
   unit: Joi.string().trim().min(1).max(32),
   purchasePrice: money,

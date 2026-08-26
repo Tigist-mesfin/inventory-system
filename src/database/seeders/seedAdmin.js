@@ -9,6 +9,7 @@ const DEFAULT_SEQUENCES = [
   { documentType: "SALE", prefix: "INV", lastValue: 0, padLength: 6 },
   { documentType: "STOCK_TRANSFER", prefix: "TR", lastValue: 0, padLength: 6 },
   { documentType: "STOCK_ADJUSTMENT", prefix: "ADJ", lastValue: 0, padLength: 6 },
+  { documentType: "CUSTOMER_ORDER", prefix: "ORD", lastValue: 0, padLength: 6 },
 ];
 
 const PERMISSION_ACTIONS = [
@@ -44,6 +45,18 @@ const PERMISSION_MODULES = [
   {
     module: "sales",
     description: "Sales and invoices",
+  },
+  {
+    module: "customers",
+    description: "Customer records, credit, and special prices",
+  },
+  {
+    module: "insights",
+    description: "Dashboards, follow-ups, and marketplace search",
+  },
+  {
+    module: "finance",
+    description: "Expenses and income statement",
   },
   {
     module: "audit",
@@ -144,6 +157,7 @@ async function seedAdminUser(role) {
     phone,
     password: ADMIN_SEED_PASSWORD,
     roleId: role.id,
+    allWarehouses: true,
     status: "ACTIVE",
   });
   console.log(`✅ Admin seeded: ${ADMIN_SEED_USERNAME}`);
@@ -155,9 +169,51 @@ module.exports = async () => {
   const role = await ensureAdminRole();
   const permissions = await seedPermissionCatalog();
   await assignAllPermissionsToRole(role, permissions);
+
+  let ownerRole = await Role.findOne({ where: { name: "COMPANY_OWNER" } });
+  if (!ownerRole) {
+    ownerRole = await Role.create({
+      name: "COMPANY_OWNER",
+      description: "Company owner with full access",
+      status: "ACTIVE",
+    });
+  }
+  await assignAllPermissionsToRole(ownerRole, permissions);
+
+  let salesmanRole = await Role.findOne({ where: { name: "SALESMAN" } });
+  if (!salesmanRole) {
+    await Role.create({
+      name: "SALESMAN",
+      description: "Store salesman with assigned module and store access",
+      status: "ACTIVE",
+    });
+  }
+
   console.log(
-    `✅ Permission catalog ready (${permissions.length} permissions assigned to ADMIN)`,
+    `✅ Permission catalog ready (${permissions.length} permissions assigned to ADMIN and COMPANY_OWNER)`,
   );
 
   await seedAdminUser(role);
+  await seedPaymentMethods();
+  await require("./seedDemo")();
 };
+
+async function seedPaymentMethods() {
+  const { PaymentMethod, Company } = models;
+  const names = ["CASH", "CARD", "BANK_TRANSFER", "MOBILE_MONEY", "CREDIT"];
+  const companies = await Company.findAll();
+  for (const company of companies) {
+    for (const name of names) {
+      const existing = await PaymentMethod.findOne({
+        where: { name, companyId: company.id },
+      });
+      if (!existing) {
+        await PaymentMethod.create({
+          name,
+          status: "ACTIVE",
+          companyId: company.id,
+        });
+      }
+    }
+  }
+}

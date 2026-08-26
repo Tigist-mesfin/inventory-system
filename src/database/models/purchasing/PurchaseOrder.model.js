@@ -18,6 +18,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
       orderNumber: {
         type: DataTypes.STRING,
         allowNull: false,
@@ -75,6 +80,21 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      paidAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+
+        validate: {
+          min: 0,
+        },
+      },
+
+      dueDate: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+
       status: {
         type: DataTypes.ENUM(
           "DRAFT",
@@ -90,6 +110,11 @@ module.exports = (sequelize, DataTypes) => {
 
       notes: {
         type: DataTypes.TEXT,
+        allowNull: true,
+      },
+
+      paymentMethod: {
+        type: DataTypes.STRING(64),
         allowNull: true,
       },
     },
@@ -130,6 +155,13 @@ module.exports = (sequelize, DataTypes) => {
     PurchaseOrder.hasMany(models.StockReceipt, {
       foreignKey: "purchaseOrderId",
       as: "receipts",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    PurchaseOrder.hasMany(models.SupplierPayment, {
+      foreignKey: "purchaseOrderId",
+      as: "payments",
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });

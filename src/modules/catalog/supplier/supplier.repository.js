@@ -50,7 +50,8 @@ exports.findAndCount = async ({ where, limit, offset }) => {
 
 exports.findById = async (id) => Supplier.findByPk(id);
 
-exports.create = async (payload) => Supplier.create(payload);
+exports.create = async (payload, transaction) =>
+  Supplier.create(payload, { transaction });
 
 exports.save = async (supplier) => {
   await supplier.save();

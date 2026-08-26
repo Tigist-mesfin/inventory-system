@@ -25,6 +25,13 @@ router.get(
 );
 
 router.get(
+  "/:id/price-history",
+  authorizePermission("catalog", "READ"),
+  validateParams(idParamSchema),
+  controller.priceHistory,
+);
+
+router.get(
   "/:id",
   authorizePermission("catalog", "READ"),
   validateParams(idParamSchema),

@@ -3,7 +3,7 @@ const { sendSuccess } = require("../../../shared/helpers/response.helper");
 const userService = require("./user.service");
 
 exports.list = catchAsync(async (req, res) => {
-  const result = await userService.list(req.query);
+  const result = await userService.list(req.query, req.user);
   sendSuccess(res, {
     data: { users: result.users },
     meta: result.meta,
@@ -12,12 +12,12 @@ exports.list = catchAsync(async (req, res) => {
 });
 
 exports.getById = catchAsync(async (req, res) => {
-  const user = await userService.getById(req.params.id);
+  const user = await userService.getById(req.params.id, req.user);
   sendSuccess(res, { data: { user }, message: "User retrieved" });
 });
 
 exports.create = catchAsync(async (req, res) => {
-  const user = await userService.create(req.body);
+  const user = await userService.create(req.body, req.user);
   sendSuccess(res, {
     data: { user },
     message: "User created",

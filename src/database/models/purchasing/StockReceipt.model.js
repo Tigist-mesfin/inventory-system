@@ -18,6 +18,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
       receivedBy: {
         type: DataTypes.UUID,
         allowNull: false,

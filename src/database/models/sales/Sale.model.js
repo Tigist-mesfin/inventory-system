@@ -18,6 +18,16 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
+      customerId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
       invoiceNumber: {
         type: DataTypes.STRING,
         allowNull: false,
@@ -80,14 +90,23 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      paidAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+
+        validate: {
+          min: 0,
+        },
+      },
+
+      dueDate: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+
       paymentMethod: {
-        type: DataTypes.ENUM(
-          "CASH",
-          "CARD",
-          "BANK_TRANSFER",
-          "MOBILE_MONEY",
-          "CREDIT",
-        ),
+        type: DataTypes.STRING(64),
         allowNull: false,
       },
 
@@ -113,8 +132,10 @@ module.exports = (sequelize, DataTypes) => {
       indexes: [
         { fields: ["warehouseId"] },
         { fields: ["createdBy"] },
+        { fields: ["customerId"] },
         { fields: ["status"] },
         { fields: ["saleDate"] },
+        { fields: ["dueDate"] },
       ],
     },
   );
@@ -134,10 +155,24 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: "CASCADE",
     });
 
+    Sale.belongsTo(models.Customer, {
+      foreignKey: "customerId",
+      as: "customer",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
     Sale.hasMany(models.SaleItem, {
       foreignKey: "saleId",
       as: "items",
       onDelete: "CASCADE",
+      onUpdate: "CASCADE",
+    });
+
+    Sale.hasMany(models.CustomerPayment, {
+      foreignKey: "saleId",
+      as: "payments",
+      onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });
   };

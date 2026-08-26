@@ -2,6 +2,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 const AppError = require("../errors/AppError");
 const catchAsync = require("../helpers/catchAsync.helper");
 const models = require("../../database/models");
+const { mergedPermissions, isOwner } = require("../helpers/tenant.helper");
 
 const PERMISSION_ACTIONS = new Set([
   "CREATE",
@@ -26,6 +27,29 @@ const rolePermissionInclude = {
   ],
 };
 
+const userAccessInclude = [
+  rolePermissionInclude,
+  {
+    model: models.Permission,
+    as: "permissions",
+    through: { attributes: [] },
+    required: false,
+  },
+  {
+    model: models.Warehouse,
+    as: "warehouses",
+    through: { attributes: [] },
+    required: false,
+    attributes: ["id", "name", "code"],
+  },
+  {
+    model: models.Company,
+    as: "company",
+    required: false,
+    attributes: ["id", "name", "phone", "address"],
+  },
+];
+
 /**
  * Authenticate via httpOnly accessToken cookie.
  * Loads User with active Role and active Permissions for RBAC checks.
@@ -44,7 +68,7 @@ const authenticate = catchAsync(async (req, res, next) => {
   if (decoded.type !== "USER") throw AppError.unauthorized("Invalid token");
 
   const user = await models.User.findByPk(decoded.id, {
-    include: [rolePermissionInclude],
+    include: userAccessInclude,
   });
 
   if (!user || user.status !== "ACTIVE") {
@@ -106,9 +130,11 @@ const authorizePermission =
         throw AppError.forbidden("Access denied");
       }
 
+      if (isOwner(req.user)) return next();
+
       const required = normalizeRequired(args);
-      const permissions = (req.user.role.permissions || []).filter(
-        (p) => p.status === "ACTIVE",
+      const permissions = mergedPermissions(req.user).filter(
+        (p) => !p.status || p.status === "ACTIVE",
       );
 
       const allowed = required.some((reqPerm) =>
@@ -126,3 +152,4 @@ module.exports = authenticate;
 module.exports.authenticate = authenticate;
 module.exports.authorizePermission = authorizePermission;
 module.exports.rolePermissionInclude = rolePermissionInclude;
+module.exports.userAccessInclude = userAccessInclude;

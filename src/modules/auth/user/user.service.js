@@ -2,6 +2,7 @@ const AppError = require("../../../shared/errors/AppError");
 const paginate = require("../../../shared/helpers/pagination.helper");
 const phoneNormalize = require("../../../shared/helpers/phoneNormalize.helper");
 const userRepository = require("./user.repository");
+const tenant = require("../../../shared/helpers/tenant.helper");
 const roleRepository = require("../role/role.repository");
 const authRepository = require("../auth.repository");
 
@@ -28,9 +29,10 @@ const assertNotLastActiveAdmin = async (user, nextStatus, nextRoleId) => {
   }
 };
 
-exports.list = async (query) => {
+exports.list = async (query, user) => {
   const { page, limit, offset } = paginate(query);
   const where = userRepository.searchWhere(query);
+  tenant.applyCompany(where, user);
   const { rows, count } = await userRepository.findAndCount({
     where,
     limit,
@@ -39,13 +41,13 @@ exports.list = async (query) => {
   return paginate.buildResult("users", rows, count, page, limit);
 };
 
-exports.getById = async (id) => {
+exports.getById = async (id, actor) => {
   const user = await userRepository.findById(id);
-  if (!user) throw AppError.notFound("User not found");
+  tenant.assertOwned(actor, user, "User not found");
   return userRepository.toPublicUser(user);
 };
 
-exports.create = async (payload) => {
+exports.create = async (payload, actor) => {
   const existing = await userRepository.findByUsername(payload.username);
   if (existing) throw AppError.conflict("username is already in use");
 
@@ -61,6 +63,7 @@ exports.create = async (payload) => {
     phone: normalizePhone(payload.phone),
     password: payload.password,
     roleId: payload.roleId,
+    companyId: tenant.companyIdOf(actor),
     status: payload.status || "ACTIVE",
   });
 

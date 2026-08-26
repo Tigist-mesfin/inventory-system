@@ -55,6 +55,17 @@ module.exports = (sequelize, DataTypes) => {
           min: 0,
         },
       },
+
+      deliveryStatus: {
+        type: DataTypes.ENUM("NOT_DELIVERED", "ON_LOADING", "DELIVERED"),
+        allowNull: false,
+        defaultValue: "NOT_DELIVERED",
+      },
+
+      warehouseId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
     },
     {
       tableName: "purchase_order_items",
@@ -66,6 +77,8 @@ module.exports = (sequelize, DataTypes) => {
           name: "purchase_order_items_po_product_unique",
         },
         { fields: ["productId"] },
+        { fields: ["deliveryStatus"] },
+        { fields: ["warehouseId"] },
       ],
     },
   );
@@ -81,6 +94,13 @@ module.exports = (sequelize, DataTypes) => {
     PurchaseOrderItem.belongsTo(models.Product, {
       foreignKey: "productId",
       as: "product",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    PurchaseOrderItem.belongsTo(models.Warehouse, {
+      foreignKey: "warehouseId",
+      as: "warehouse",
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });

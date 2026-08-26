@@ -38,6 +38,17 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
+      allWarehouses: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+
       status: {
         type: DataTypes.ENUM("ACTIVE", "INACTIVE", "SUSPENDED"),
         allowNull: false,
@@ -94,6 +105,27 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: "CASCADE",
     });
 
+    User.belongsTo(models.Company, {
+      foreignKey: "companyId",
+      as: "company",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    User.belongsToMany(models.Warehouse, {
+      through: models.UserWarehouse,
+      foreignKey: "userId",
+      otherKey: "warehouseId",
+      as: "warehouses",
+    });
+
+    User.belongsToMany(models.Permission, {
+      through: models.UserPermission,
+      foreignKey: "userId",
+      otherKey: "permissionId",
+      as: "permissions",
+    });
+
     User.hasMany(models.PurchaseOrder, {
       foreignKey: "createdBy",
       as: "purchaseOrders",
@@ -140,6 +172,41 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "userId",
       as: "auditLogs",
       onDelete: "SET NULL",
+      onUpdate: "CASCADE",
+    });
+
+    User.hasMany(models.Customer, {
+      foreignKey: "createdBy",
+      as: "customers",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    User.hasMany(models.CustomerPayment, {
+      foreignKey: "recordedBy",
+      as: "customerPayments",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    User.hasMany(models.SupplierPayment, {
+      foreignKey: "recordedBy",
+      as: "supplierPayments",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    User.hasMany(models.PriceHistory, {
+      foreignKey: "changedBy",
+      as: "priceHistories",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    User.hasMany(models.Expense, {
+      foreignKey: "createdBy",
+      as: "expenses",
+      onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });
   };

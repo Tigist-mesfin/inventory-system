@@ -12,6 +12,8 @@ const {
   PurchaseOrderItem,
   StockReceiptItem,
   SaleItem,
+  PriceHistory,
+  User,
 } = models;
 
 const include = [
@@ -31,6 +33,9 @@ const toPublic = (product) => {
     sku: plain.sku,
     barcode: plain.barcode,
     name: plain.name,
+    brand: plain.brand,
+    size: plain.size,
+    color: plain.color,
     description: plain.description,
     unit: plain.unit,
     purchasePrice: plain.purchasePrice,
@@ -61,14 +66,32 @@ const toPublic = (product) => {
 
 exports.toPublic = toPublic;
 
-exports.searchWhere = ({ search, status, categoryId, supplierId }) => {
+exports.searchWhere = ({
+  search,
+  status,
+  categoryId,
+  supplierId,
+  brand,
+  size,
+  color,
+}) => {
   const where = {};
   if (status) where.status = status;
   if (categoryId) where.categoryId = categoryId;
   if (supplierId) where.supplierId = supplierId;
+  if (brand) where.brand = { [Op.like]: `%${brand}%` };
+  if (size) where.size = { [Op.like]: `%${size}%` };
+  if (color) where.color = { [Op.like]: `%${color}%` };
   if (search) {
     const like = { [Op.like]: `%${search}%` };
-    where[Op.or] = [{ name: like }, { sku: like }, { barcode: like }];
+    where[Op.or] = [
+      { name: like },
+      { sku: like },
+      { barcode: like },
+      { brand: like },
+      { size: like },
+      { color: like },
+    ];
   }
   return where;
 };
@@ -87,10 +110,13 @@ exports.findAndCount = async ({ where, limit, offset }) => {
 
 exports.findById = async (id) => Product.findByPk(id, { include });
 
-exports.findBySku = async (sku) => Product.findOne({ where: { sku } });
+exports.findBySku = async (sku, companyId) =>
+  Product.findOne({ where: { sku, ...(companyId ? { companyId } : {}) } });
 
-exports.findByBarcode = async (barcode) =>
-  Product.findOne({ where: { barcode } });
+exports.findByBarcode = async (barcode, companyId) =>
+  Product.findOne({
+    where: { barcode, ...(companyId ? { companyId } : {}) },
+  });
 
 exports.create = async (payload) => {
   const created = await Product.create(payload);
@@ -103,6 +129,51 @@ exports.save = async (product) => {
 };
 
 exports.destroy = async (product) => product.destroy();
+
+exports.recordPriceHistory = async ({
+  productId,
+  changedBy,
+  companyId,
+  purchasePrice,
+  sellingPrice,
+  note,
+}) =>
+  PriceHistory.create({
+    productId,
+    changedBy,
+    companyId: companyId || null,
+    purchasePrice,
+    sellingPrice,
+    note: note || null,
+  });
+
+exports.listPriceHistory = async (productId) => {
+  const rows = await PriceHistory.findAll({
+    where: { productId },
+    include: [
+      { model: User, as: "changer", attributes: ["id", "fullName", "username"] },
+    ],
+    order: [["createdAt", "DESC"]],
+    limit: 100,
+  });
+  return rows.map((row) => {
+    const plain = row.toJSON();
+    return {
+      id: plain.id,
+      purchasePrice: plain.purchasePrice,
+      sellingPrice: plain.sellingPrice,
+      note: plain.note,
+      changedBy: plain.changer
+        ? {
+            id: plain.changer.id,
+            fullName: plain.changer.fullName,
+            username: plain.changer.username,
+          }
+        : null,
+      createdAt: plain.createdAt,
+    };
+  });
+};
 
 exports.countOperationalReferences = async (productId) => {
   const [

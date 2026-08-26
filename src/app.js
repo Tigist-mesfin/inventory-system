@@ -19,16 +19,42 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-const allowedOrigins = env.ALLOWED_ORIGINS.split(",").map((s) => s.trim());
+const allowedOrigins = env.ALLOWED_ORIGINS.split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (env.FRONTEND_URL && !allowedOrigins.includes(env.FRONTEND_URL)) {
+  allowedOrigins.push(env.FRONTEND_URL);
+}
 if (env.NODE_ENV === "production" && allowedOrigins.includes("*")) {
   console.error(
     "❌ ALLOWED_ORIGINS must be an explicit origin list in production — cookie-based auth cannot use credentials with a wildcard origin.",
   );
   process.exit(1);
 }
+
+const isDevLoopbackOrigin = (origin) => {
+  if (env.NODE_ENV === "production") return false;
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+};
+
 app.use(
   cors({
-    origin: allowedOrigins.includes("*") ? "*" : allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.includes("*") ||
+        allowedOrigins.includes(origin) ||
+        isDevLoopbackOrigin(origin)
+      ) {
+        return callback(null, origin);
+      }
+      return callback(AppError.forbidden("Not allowed by CORS"));
+    },
     credentials: true,
   }),
 );

@@ -13,6 +13,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
       action: {
         type: DataTypes.ENUM(
           "CREATE",

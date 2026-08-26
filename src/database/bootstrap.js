@@ -28,12 +28,18 @@ const bootstrapDatabase = async (maxRetries = 5, delayMs = 2000) => {
       console.log(`🗄️ Database ensured: ${env.DB_NAME}`);
       return;
     } catch (err) {
+      const nested = err.errors?.[0];
+      const detail = [err.code || nested?.code, err.message || nested?.message]
+        .filter(Boolean)
+        .join(" ") || String(err);
       console.log(
-        `⏳ DB bootstrap attempt ${attempt}/${maxRetries} failed: ${err.message}`,
+        `⏳ DB bootstrap attempt ${attempt}/${maxRetries} failed: ${detail} (${env.DB_USER}@${env.DB_HOST}:${env.DB_PORT})`,
       );
 
       if (attempt === maxRetries) {
-        throw new Error("❌ Failed to bootstrap database after retries");
+        throw new Error(
+          `Failed to bootstrap database after retries: ${detail} (${env.DB_USER}@${env.DB_HOST}:${env.DB_PORT})`,
+        );
       }
 
       await sleep(delayMs);

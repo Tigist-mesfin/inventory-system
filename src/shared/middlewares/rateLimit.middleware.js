@@ -30,3 +30,15 @@ exports.refreshLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
 });
+
+exports.publicOrderLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+});
+
+exports.aiChatLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 60 * 1000,
+  limit: 20,
+});

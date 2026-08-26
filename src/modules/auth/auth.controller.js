@@ -6,6 +6,19 @@ const {
 } = require("../../shared/helpers/cookie.helper");
 const authService = require("./auth.service");
 
+exports.registerCompany = catchAsync(async (req, res) => {
+  const result = await authService.registerCompany(req.body);
+  setAuthCookies(res, {
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
+  });
+  sendSuccess(res, {
+    data: { user: result.user },
+    message: "Company registered",
+    statusCode: 201,
+  });
+});
+
 exports.login = catchAsync(async (req, res) => {
   const result = await authService.login(req.body);
   setAuthCookies(res, {

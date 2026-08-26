@@ -30,6 +30,12 @@ module.exports = {
   EMAIL_FROM_NAME: process.env.EMAIL_FROM_NAME,
   EMAIL_FROM_ADDRESS: process.env.EMAIL_FROM_ADDRESS,
 
+  AI_PROVIDER: process.env.AI_PROVIDER || "local",
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+  OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
+  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-2.0-flash",
+
   COOKIE_SECURE: process.env.COOKIE_SECURE === "true",
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || "*",
 };

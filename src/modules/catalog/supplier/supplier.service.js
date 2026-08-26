@@ -2,6 +2,7 @@ const AppError = require("../../../shared/errors/AppError");
 const paginate = require("../../../shared/helpers/pagination.helper");
 const phoneNormalize = require("../../../shared/helpers/phoneNormalize.helper");
 const supplierRepository = require("./supplier.repository");
+const tenant = require("../../../shared/helpers/tenant.helper");
 
 const emptyToNull = (value) => {
   if (value === undefined) return undefined;
@@ -15,9 +16,10 @@ const normalizeOptionalPhone = (phone) => {
   return phoneNormalize(phone) || phone;
 };
 
-exports.list = async (query) => {
+exports.list = async (query, user) => {
   const { page, limit, offset } = paginate(query);
   const where = supplierRepository.searchWhere(query);
+  tenant.applyCompany(where, user);
   const { rows, count } = await supplierRepository.findAndCount({
     where,
     limit,
@@ -26,13 +28,13 @@ exports.list = async (query) => {
   return paginate.buildResult("suppliers", rows, count, page, limit);
 };
 
-exports.getById = async (id) => {
+exports.getById = async (id, user) => {
   const supplier = await supplierRepository.findById(id);
-  if (!supplier) throw AppError.notFound("Supplier not found");
+  tenant.assertOwned(user, supplier, "Supplier not found");
   return supplierRepository.toPublic(supplier);
 };
 
-exports.create = async (payload) => {
+exports.create = async (payload, transaction, user) => {
   const supplier = await supplierRepository.create({
     name: payload.name,
     contactPerson: emptyToNull(payload.contactPerson) ?? null,
@@ -41,7 +43,8 @@ exports.create = async (payload) => {
     address: payload.address ?? null,
     paymentTerms: emptyToNull(payload.paymentTerms) ?? null,
     status: payload.status || "ACTIVE",
-  });
+    companyId: tenant.companyIdOf(user),
+  }, transaction);
   return supplierRepository.toPublic(supplier);
 };
 

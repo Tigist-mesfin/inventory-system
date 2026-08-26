@@ -13,6 +13,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
       contactPerson: {
         type: DataTypes.STRING,
         allowNull: true,
@@ -65,6 +70,13 @@ module.exports = (sequelize, DataTypes) => {
     Supplier.hasMany(models.PurchaseOrder, {
       foreignKey: "supplierId",
       as: "purchaseOrders",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    Supplier.hasMany(models.SupplierPayment, {
+      foreignKey: "supplierId",
+      as: "payments",
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });

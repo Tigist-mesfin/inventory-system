@@ -10,7 +10,15 @@ const controller = require("./auth.controller");
 const {
   loginSchema,
   changePasswordSchema,
+  registerCompanySchema,
 } = require("./auth.validation");
+
+router.post(
+  "/register-company",
+  loginLimiter,
+  validateBody(registerCompanySchema),
+  controller.registerCompany,
+);
 
 router.post(
   "/login",

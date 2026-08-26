@@ -38,7 +38,8 @@ exports.findAndCount = async ({ where, limit, offset }) => {
 
 exports.findById = async (id) => Category.findByPk(id);
 
-exports.findByName = async (name) => Category.findOne({ where: { name } });
+exports.findByName = async (name, companyId) =>
+  Category.findOne({ where: { name, ...(companyId ? { companyId } : {}) } });
 
 exports.create = async (payload) => Category.create(payload);
 

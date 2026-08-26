@@ -1,10 +1,12 @@
 const AppError = require("../../../shared/errors/AppError");
 const paginate = require("../../../shared/helpers/pagination.helper");
 const categoryRepository = require("./category.repository");
+const tenant = require("../../../shared/helpers/tenant.helper");
 
-exports.list = async (query) => {
+exports.list = async (query, user) => {
   const { page, limit, offset } = paginate(query);
   const where = categoryRepository.searchWhere(query);
+  tenant.applyCompany(where, user);
   const { rows, count } = await categoryRepository.findAndCount({
     where,
     limit,
@@ -13,30 +15,33 @@ exports.list = async (query) => {
   return paginate.buildResult("categories", rows, count, page, limit);
 };
 
-exports.getById = async (id) => {
+exports.getById = async (id, user) => {
   const category = await categoryRepository.findById(id);
-  if (!category) throw AppError.notFound("Category not found");
+  tenant.assertOwned(user, category, "Category not found");
   return categoryRepository.toPublic(category);
 };
 
-exports.create = async (payload) => {
-  const existing = await categoryRepository.findByName(payload.name);
+exports.create = async (payload, user) => {
+  const companyId = tenant.companyIdOf(user);
+  const existing = await categoryRepository.findByName(payload.name, companyId);
   if (existing) throw AppError.conflict("name is already in use");
 
   const category = await categoryRepository.create({
     name: payload.name,
     description: payload.description || null,
     status: payload.status || "ACTIVE",
+    companyId,
   });
   return categoryRepository.toPublic(category);
 };
 
-exports.update = async (id, payload) => {
+exports.update = async (id, payload, user) => {
   const category = await categoryRepository.findById(id);
-  if (!category) throw AppError.notFound("Category not found");
+  tenant.assertOwned(user, category, "Category not found");
+  const companyId = tenant.companyIdOf(user);
 
   if (payload.name && payload.name !== category.name) {
-    const taken = await categoryRepository.findByName(payload.name);
+    const taken = await categoryRepository.findByName(payload.name, companyId);
     if (taken) throw AppError.conflict("name is already in use");
     category.name = payload.name;
   }
@@ -50,9 +55,9 @@ exports.update = async (id, payload) => {
   return categoryRepository.toPublic(saved);
 };
 
-exports.remove = async (id) => {
+exports.remove = async (id, user) => {
   const category = await categoryRepository.findById(id);
-  if (!category) throw AppError.notFound("Category not found");
+  tenant.assertOwned(user, category, "Category not found");
 
   const productCount = await categoryRepository.countProducts(id);
   if (productCount > 0) {

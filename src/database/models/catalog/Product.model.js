@@ -18,21 +18,39 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      companyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
       sku: {
         type: DataTypes.STRING,
         allowNull: false,
-        unique: true,
       },
 
       barcode: {
         type: DataTypes.STRING,
         allowNull: true,
-        unique: true,
       },
 
       name: {
         type: DataTypes.STRING,
         allowNull: false,
+      },
+
+      brand: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      size: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      color: {
+        type: DataTypes.STRING,
+        allowNull: true,
       },
 
       description: {
@@ -112,6 +130,9 @@ module.exports = (sequelize, DataTypes) => {
         { fields: ["supplierId"] },
         { fields: ["status"] },
         { fields: ["name"] },
+        { fields: ["brand"] },
+        { fields: ["size"] },
+        { fields: ["color"] },
       ],
     },
   );
@@ -176,6 +197,20 @@ module.exports = (sequelize, DataTypes) => {
     Product.hasMany(models.SaleItem, {
       foreignKey: "productId",
       as: "saleItems",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    Product.hasMany(models.PriceHistory, {
+      foreignKey: "productId",
+      as: "priceHistories",
+      onDelete: "CASCADE",
+      onUpdate: "CASCADE",
+    });
+
+    Product.hasMany(models.CustomerPrice, {
+      foreignKey: "productId",
+      as: "customerPrices",
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });

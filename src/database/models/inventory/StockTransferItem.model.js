@@ -41,7 +41,11 @@ module.exports = (sequelize, DataTypes) => {
       tableName: "stock_transfer_items",
 
       indexes: [
-        { fields: ["stockTransferId"] },
+        {
+          unique: true,
+          fields: ["stockTransferId", "productId"],
+          name: "stock_transfer_items_transfer_product_unique",
+        },
         { fields: ["productId"] },
       ],
     },

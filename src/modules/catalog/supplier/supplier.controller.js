@@ -3,7 +3,7 @@ const { sendSuccess } = require("../../../shared/helpers/response.helper");
 const supplierService = require("./supplier.service");
 
 exports.list = catchAsync(async (req, res) => {
-  const result = await supplierService.list(req.query);
+  const result = await supplierService.list(req.query, req.user);
   sendSuccess(res, {
     data: { suppliers: result.suppliers },
     meta: result.meta,
@@ -12,12 +12,12 @@ exports.list = catchAsync(async (req, res) => {
 });
 
 exports.getById = catchAsync(async (req, res) => {
-  const supplier = await supplierService.getById(req.params.id);
+  const supplier = await supplierService.getById(req.params.id, req.user);
   sendSuccess(res, { data: { supplier }, message: "Supplier retrieved" });
 });
 
 exports.create = catchAsync(async (req, res) => {
-  const supplier = await supplierService.create(req.body);
+  const supplier = await supplierService.create(req.body, null, req.user);
   sendSuccess(res, {
     data: { supplier },
     message: "Supplier created",

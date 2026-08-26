@@ -51,6 +51,20 @@ npm run dev       # development also syncs models when NODE_ENV=development
 
 Health check: `GET /health`. Root: `GET /`.
 
+## Web app (React)
+
+A mobile-first wholesale desk lives in `client/`.
+
+```bash
+npm run migrate
+npm run dev          # API on PORT from .env (default 3000)
+npm run client       # UI on http://localhost:5173
+```
+
+Sign in with the seeded admin username/password. The Vite proxy forwards `/api` to the backend and keeps httpOnly auth cookies.
+
+## Environment
+
 ## Environment
 
 | Group | Variables |

@@ -3,7 +3,7 @@ const { sendSuccess } = require("../../../shared/helpers/response.helper");
 const categoryService = require("./category.service");
 
 exports.list = catchAsync(async (req, res) => {
-  const result = await categoryService.list(req.query);
+  const result = await categoryService.list(req.query, req.user);
   sendSuccess(res, {
     data: { categories: result.categories },
     meta: result.meta,
@@ -12,12 +12,12 @@ exports.list = catchAsync(async (req, res) => {
 });
 
 exports.getById = catchAsync(async (req, res) => {
-  const category = await categoryService.getById(req.params.id);
+  const category = await categoryService.getById(req.params.id, req.user);
   sendSuccess(res, { data: { category }, message: "Category retrieved" });
 });
 
 exports.create = catchAsync(async (req, res) => {
-  const category = await categoryService.create(req.body);
+  const category = await categoryService.create(req.body, req.user);
   sendSuccess(res, {
     data: { category },
     message: "Category created",
@@ -26,11 +26,11 @@ exports.create = catchAsync(async (req, res) => {
 });
 
 exports.update = catchAsync(async (req, res) => {
-  const category = await categoryService.update(req.params.id, req.body);
+  const category = await categoryService.update(req.params.id, req.body, req.user);
   sendSuccess(res, { data: { category }, message: "Category updated" });
 });
 
 exports.remove = catchAsync(async (req, res) => {
-  await categoryService.remove(req.params.id);
+  await categoryService.remove(req.params.id, req.user);
   sendSuccess(res, { data: null, message: "Category deleted" });
 });
