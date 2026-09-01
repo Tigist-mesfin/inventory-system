@@ -52,6 +52,7 @@ exports.create = async (payload, user) => {
       if (!po || po.supplierId !== payload.supplierId) {
         throw AppError.badRequest("Purchase order not found for this supplier");
       }
+      tenant.assertOwned(user, po, "Purchase order not found");
       const nextPaid = decimal.addMoney(po.paidAmount || 0, payload.amount);
       if (decimal.cmpMoney(nextPaid, po.totalAmount) > 0) {
         throw AppError.badRequest("Payment exceeds remaining supplier balance");
@@ -63,6 +64,7 @@ exports.create = async (payload, user) => {
       const orders = await PurchaseOrder.findAll({
         where: {
           supplierId: payload.supplierId,
+          companyId: tenant.requireCompanyId(user),
           status: { [Op.ne]: "CANCELLED" },
         },
         lock: transaction.LOCK.UPDATE,

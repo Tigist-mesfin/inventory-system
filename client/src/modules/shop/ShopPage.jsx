@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, money, qty } from "../../api/client";
-import LineEditor, { emptyLine, lineAmount } from "../../components/LineEditor";
+import { api, money } from "../../api/client";
+import LineEditor, { emptyLine, VatSummary } from "../../components/LineEditor";
 
 export default function ShopPage() {
   const [products, setProducts] = useState([]);
@@ -23,8 +23,6 @@ export default function ShopPage() {
     ...p,
     purchasePrice: p.sellingPrice,
   }));
-
-  const grandTotal = lines.reduce((sum, line) => sum + lineAmount(line), 0);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -96,9 +94,7 @@ export default function ShopPage() {
             priceKey="sellingPrice"
           />
 
-          <div className="totals-box" style={{ marginTop: 16 }}>
-            Grand total: <strong>{money(grandTotal)} ETB</strong>
-          </div>
+          <VatSummary lines={lines} products={shopProducts} />
           {error ? <p className="error">{error}</p> : null}
           <button className="btn saffron" style={{ marginTop: 16 }} disabled={busy}>
             {busy ? "Sending order…" : "Place order"}

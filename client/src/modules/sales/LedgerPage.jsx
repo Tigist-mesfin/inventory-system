@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, money } from "../../api/client";
 import TradeTabs from "./TradeTabs";
+import InventoryLoading from "../../components/InventoryLoading";
 
 export default function LedgerPage() {
   const [tab, setTab] = useState("credit");
   const [ledger, setLedger] = useState({ credits: [], debits: [], creditTotal: 0, debitTotal: 0 });
   const [methods, setMethods] = useState([]);
   const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [collect, setCollect] = useState({ customerId: "", amount: "", paymentMethod: "" });
   const [pay, setPay] = useState({ purchaseOrderId: "", amount: "", paymentMethod: "" });
@@ -30,7 +32,9 @@ export default function LedgerPage() {
   };
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
+    load()
+      .catch((err) => setError(err.message))
+      .finally(() => setReady(true));
   }, []);
 
   const customersOpen = useMemo(() => {
@@ -126,6 +130,8 @@ export default function LedgerPage() {
     }
   };
 
+  if (!ready) return <InventoryLoading message="Loading inventory..." />;
+
   return (
     <>
       <div className="topbar">
@@ -136,7 +142,6 @@ export default function LedgerPage() {
           </p>
         </div>
       </div>
-      <TradeTabs />
       {error ? <p className="error">{error}</p> : null}
 
       <section className="grid stats" style={{ marginBottom: 16 }}>

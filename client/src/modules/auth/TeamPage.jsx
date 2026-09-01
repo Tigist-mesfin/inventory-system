@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { isOwner } from "../../auth/access";
 import { useAuth } from "../../auth/AuthContext";
+import InventoryLoading from "../../components/InventoryLoading";
 
 const MODULES = [
   { key: "sales", label: "Sales" },
@@ -15,7 +16,7 @@ const MODULES = [
   { key: "auth", label: "Team / company" },
 ];
 
-const ACTIONS = ["READ", "CREATE", "UPDATE", "DELETE"];
+const ACTIONS = ["READ", "CREATE", "UPDATE", "DELETE", "APPROVE"];
 
 const emptyForm = {
   fullName: "",
@@ -34,6 +35,7 @@ export default function TeamPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const load = async () => {
     const [team, stores] = await Promise.all([
@@ -46,7 +48,9 @@ export default function TeamPage() {
 
   useEffect(() => {
     if (!isOwner(user)) return;
-    load().catch((err) => setError(err.message));
+    load()
+      .catch((err) => setError(err.message))
+      .finally(() => setReady(true));
   }, [user]);
 
   const toggleWarehouse = (id) => {
@@ -116,6 +120,8 @@ export default function TeamPage() {
   if (!isOwner(user)) {
     return <p className="muted">Only the company owner can manage salesmen.</p>;
   }
+
+  if (!ready) return <InventoryLoading message="Loading inventory..." />;
 
   return (
     <>

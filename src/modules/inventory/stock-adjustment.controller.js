@@ -26,19 +26,23 @@ exports.create = catchAsync(async (req, res) => {
 });
 
 exports.update = catchAsync(async (req, res) => {
-  const adjustment = await stockAdjustmentService.update(req.params.id, req.body);
+  const adjustment = await stockAdjustmentService.update(
+    req.params.id,
+    req.body,
+    req.user,
+  );
   sendSuccess(res, { data: { adjustment }, message: "Stock adjustment updated" });
 });
 
 exports.complete = catchAsync(async (req, res) => {
   const adjustment = await stockAdjustmentService.complete(
     req.params.id,
-    req.user.id,
+    req.user,
   );
   sendSuccess(res, { data: { adjustment }, message: "Stock adjustment completed" });
 });
 
 exports.cancel = catchAsync(async (req, res) => {
-  const adjustment = await stockAdjustmentService.cancel(req.params.id);
+  const adjustment = await stockAdjustmentService.cancel(req.params.id, req.user);
   sendSuccess(res, { data: { adjustment }, message: "Stock adjustment cancelled" });
 });

@@ -6,6 +6,7 @@ const {
   Customer,
   CustomerPrice,
   CustomerPayment,
+  CustomerWalletTransaction,
   Sale,
   Product,
   User,
@@ -23,6 +24,7 @@ const toPublic = (customer, extras = {}) => {
     businessName: plain.businessName,
     location: plain.location,
     creditLimit: plain.creditLimit,
+    walletBalance: decimal.money(plain.walletBalance || 0),
     notes: plain.notes,
     status: plain.status,
     type: plain.type || "CUSTOMER",
@@ -63,6 +65,12 @@ exports.findAndCount = async ({ where, limit, offset }) => {
 };
 
 exports.findById = async (id) => Customer.findByPk(id);
+
+exports.findByIdForUpdate = async (id, transaction) =>
+  Customer.findByPk(id, {
+    lock: transaction.LOCK.UPDATE,
+    transaction,
+  });
 
 exports.create = async (payload, transaction) =>
   Customer.create(payload, { transaction });
@@ -225,6 +233,113 @@ exports.listPayments = async (customerId) => {
 
 exports.createPayment = async (payload, transaction) =>
   CustomerPayment.create(payload, { transaction });
+
+exports.createWalletTransaction = async (payload, transaction) =>
+  CustomerWalletTransaction.create(payload, { transaction });
+
+const walletInclude = [
+  {
+    model: Customer,
+    as: "customer",
+    attributes: ["id", "name", "phone"],
+  },
+  {
+    model: User,
+    as: "recorder",
+    attributes: ["id", "fullName", "username"],
+  },
+  {
+    model: Sale,
+    as: "sale",
+    attributes: ["id", "invoiceNumber"],
+    required: false,
+  },
+];
+
+const toWalletPublic = (row) => {
+  const plain = typeof row.toJSON === "function" ? row.toJSON() : { ...row };
+  return {
+    id: plain.id,
+    customerId: plain.customerId,
+    saleId: plain.saleId,
+    type: plain.type,
+    amount: plain.amount,
+    method: plain.method,
+    reason: plain.reason,
+    occurredAt: plain.occurredAt,
+    createdAt: plain.createdAt,
+    customer: plain.customer || null,
+    recorder: plain.recorder || null,
+    sale: plain.sale || null,
+  };
+};
+
+exports.toWalletPublic = toWalletPublic;
+
+exports.walletSearchWhere = ({ customerId, type, from, to }) => {
+  const where = {};
+  if (customerId) where.customerId = customerId;
+  if (type) where.type = type;
+  if (from || to) {
+    where.occurredAt = {};
+    if (from) where.occurredAt[Op.gte] = from;
+    if (to) {
+      const end = new Date(to);
+      if (String(to).length <= 10) end.setHours(23, 59, 59, 999);
+      where.occurredAt[Op.lte] = end;
+    }
+  }
+  return where;
+};
+
+exports.applyWalletTextSearch = async (where, search, companyId) => {
+  if (!search) return where;
+  const like = { [Op.like]: `%${search}%` };
+  const customerWhere = {
+    [Op.or]: [{ name: like }, { phone: like }],
+  };
+  if (companyId) customerWhere.companyId = companyId;
+  const rows = await Customer.findAll({
+    where: customerWhere,
+    attributes: ["id"],
+    raw: true,
+  });
+  const ids = rows.map((row) => row.id);
+  where[Op.or] = [
+    { method: like },
+    { reason: like },
+    ...(ids.length ? [{ customerId: { [Op.in]: ids } }] : []),
+  ];
+  return where;
+};
+
+exports.findWalletTransactions = async ({ where, limit, offset }) => {
+  const { rows, count } = await CustomerWalletTransaction.findAndCountAll({
+    where,
+    include: walletInclude,
+    limit,
+    offset,
+    order: [["occurredAt", "DESC"], ["createdAt", "DESC"]],
+    distinct: true,
+  });
+  return { rows: rows.map(toWalletPublic), count };
+};
+
+exports.listWalletTransactions = async (customerId) => {
+  const rows = await CustomerWalletTransaction.findAll({
+    where: { customerId },
+    include: walletInclude,
+    order: [["occurredAt", "DESC"], ["createdAt", "DESC"]],
+  });
+  return rows.map(toWalletPublic);
+};
+
+exports.findSaleWalletDebits = async (saleId, transaction) =>
+  CustomerWalletTransaction.findAll({
+    where: { saleId, type: "SALE" },
+    lock: transaction.LOCK.UPDATE,
+    transaction,
+  });
 
 exports.findCreditSaleForUpdate = async (saleId, customerId, transaction) =>
   Sale.findOne({

@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const models = require("../../database/models");
 const decimal = require("../../shared/helpers/decimal.helper");
+const vat = require("../../shared/helpers/vat.helper");
 
 const {
   Sale,
@@ -18,7 +19,37 @@ const itemInclude = {
     {
       model: Product,
       as: "product",
-      attributes: ["id", "sku", "name", "brand", "size", "color", "unit", "sellingPrice"],
+      attributes: [
+        "id",
+        "sku",
+        "name",
+        "brand",
+        "size",
+        "color",
+        "unit",
+        "sellingPrice",
+        "purchasePrice",
+      ],
+    },
+    {
+      model: models.SaleCostAllocation,
+      as: "costAllocations",
+      required: false,
+      include: [
+        {
+          model: models.StockBatch,
+          as: "stockBatch",
+          attributes: [
+            "id",
+            "purchaseDate",
+            "unitCost",
+            "originalQuantity",
+            "remainingQuantity",
+            "sourceType",
+            "purchaseOrderId",
+          ],
+        },
+      ],
     },
   ],
 };
@@ -35,14 +66,61 @@ const include = [
   },
 ];
 
+const listInclude = [
+  { ...itemInclude, separate: true },
+  ...include.slice(1),
+];
+
 const remainingOf = (plain) =>
   decimal.subMoney(plain.totalAmount, plain.paidAmount);
 
-const endOfDay = (value) => {
+const linePurchaseCost = (item) => {
+  const allocs = item.costAllocations || [];
+  let qty = decimal.qty(0);
+  let unit = decimal.money(0);
+  for (const alloc of allocs) {
+    const take = decimal.qty(alloc.quantity || 0);
+    if (decimal.cmpQty(take, 0) <= 0) continue;
+    unit = decimal.weightedAverage(qty, unit, take, alloc.unitCost || 0);
+    qty = decimal.addQty(qty, take);
+  }
+  if (decimal.cmpQty(qty, 0) > 0) {
+    return {
+      purchaseUnitCost: unit,
+      purchaseTotal: decimal.lineTotal(item.quantity, unit, 0),
+    };
+  }
+  const fallback = decimal.money(item.product?.purchasePrice || 0);
+  return {
+    purchaseUnitCost: fallback,
+    purchaseTotal: decimal.lineTotal(item.quantity, fallback, 0),
+  };
+};
+
+const calendarDay = (value) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+  }
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  if (String(value).length <= 10) date.setHours(23, 59, 59, 999);
-  return date;
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+const startOfDay = (value) => {
+  const day = calendarDay(value);
+  if (!day) return value;
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year, month - 1, date, 0, 0, 0, 0);
+};
+
+const endOfDay = (value) => {
+  const day = calendarDay(value);
+  if (!day) return value;
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year, month - 1, date, 23, 59, 59, 999);
 };
 
 const toPublic = (sale) => {
@@ -60,6 +138,7 @@ const toPublic = (sale) => {
     dueDate: plain.dueDate,
     subtotal: plain.subtotal,
     taxAmount: plain.taxAmount,
+    vatRate: vat.rate(),
     discountAmount: plain.discountAmount,
     totalAmount: plain.totalAmount,
     paidAmount: plain.paidAmount,
@@ -83,7 +162,19 @@ const toPublic = (sale) => {
       unitPrice: item.unitPrice,
       discountAmount: item.discountAmount,
       totalPrice: item.totalPrice,
+      ...vat.decorateLine(item.totalPrice),
+      ...linePurchaseCost(item),
       product: item.product || null,
+      costAllocations: (item.costAllocations || []).map((alloc) => ({
+        id: alloc.id,
+        stockBatchId: alloc.stockBatchId,
+        quantity: alloc.quantity,
+        unitCost: alloc.unitCost,
+        totalCost: alloc.totalCost,
+        costingMethod: alloc.costingMethod,
+        purchaseDate: alloc.stockBatch?.purchaseDate || null,
+        sourceType: alloc.stockBatch?.sourceType || null,
+      })),
     })),
     createdAt: plain.createdAt,
     updatedAt: plain.updatedAt,
@@ -111,7 +202,7 @@ exports.searchWhere = ({
   if (paymentMethod) where.paymentMethod = paymentMethod;
   if (from || to) {
     where.saleDate = {};
-    if (from) where.saleDate[Op.gte] = from;
+    if (from) where.saleDate[Op.gte] = startOfDay(from);
     if (to) where.saleDate[Op.lte] = endOfDay(to);
   }
   if (search) {
@@ -128,7 +219,7 @@ exports.searchWhere = ({
 exports.findAndCount = async ({ where, limit, offset }) => {
   const { rows, count } = await Sale.findAndCountAll({
     where,
-    include,
+    include: listInclude,
     limit,
     offset,
     order: [["saleDate", "DESC"]],

@@ -18,15 +18,18 @@ class GeminiProvider extends AIProvider {
   constructor(apiKey, model) {
     super("gemini");
     this.apiKey = apiKey;
-    this.model = model || "gemini-2.0-flash";
+    this.model = model || "gemini-3.6-flash";
     this.fallback = new LocalAIProvider();
   }
 
   async generate(prompt) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": this.apiKey,
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0 },

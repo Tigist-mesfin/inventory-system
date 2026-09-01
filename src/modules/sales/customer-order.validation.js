@@ -24,7 +24,14 @@ exports.listQuerySchema = Joi.object({
   page: Joi.number().integer().min(1),
   limit: Joi.number().integer().min(1).max(100),
   search: Joi.string().trim().max(128).allow(""),
-  status: Joi.string().valid("PENDING", "ON_LOADING", "DELIVERED", "CANCELLED"),
+  status: Joi.string().valid(
+    "PENDING",
+    "ON_LOADING",
+    "DELIVERED",
+    "CANCELLED",
+    "SOLD",
+    "REJECTED",
+  ),
   paymentStatus: Joi.string().valid("UNPAID", "PARTIAL", "PAID"),
   productId: uuid(),
   from: Joi.date().iso(),
@@ -32,6 +39,10 @@ exports.listQuerySchema = Joi.object({
 });
 
 exports.idParamSchema = Joi.object({ id: uuid().required() });
+
+exports.shareTokenParamSchema = Joi.object({
+  token: Joi.string().trim().min(16).max(2048).required(),
+});
 
 exports.updateSchema = Joi.object({
   customerName: Joi.string().trim().min(2).max(128),
@@ -42,18 +53,23 @@ exports.updateSchema = Joi.object({
 }).min(1);
 
 exports.approveSchema = Joi.object({
-  warehouseId: uuid().required(),
-  paymentMethodId: uuid().required(),
+  warehouseId: uuid().allow(null, ""),
+  paymentMethodId: uuid().allow(null, ""),
   paidAmount: money.required(),
-  status: Joi.string().valid("ON_LOADING", "DELIVERED"),
+  status: Joi.string().valid("ON_LOADING", "DELIVERED", "SOLD"),
   items: Joi.array().items(itemSchema).min(1),
 });
 
 exports.statusSchema = Joi.object({
-  status: Joi.string().valid("ON_LOADING", "DELIVERED").required(),
+  status: Joi.string()
+    .valid("ON_LOADING", "DELIVERED", "CANCELLED", "SOLD", "REJECTED")
+    .required(),
 });
 
 exports.paymentSchema = Joi.object({
-  amount: Joi.number().min(0.01).precision(2).required(),
+  amount: Joi.alternatives()
+    .try(Joi.number().min(0).precision(2), Joi.string().trim())
+    .required(),
   paymentMethodId: uuid(),
+  payRemaining: Joi.boolean(),
 });

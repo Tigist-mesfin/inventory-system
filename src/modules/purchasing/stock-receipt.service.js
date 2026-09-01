@@ -16,9 +16,9 @@ const emptyToNull = (value) => {
   return value;
 };
 
-const assertWarehouse = async (warehouseId) => {
+const assertWarehouse = async (warehouseId, user) => {
   const warehouse = await Warehouse.findByPk(warehouseId);
-  if (!warehouse) throw AppError.badRequest("Warehouse not found");
+  tenant.assertOwned(user, warehouse, "Warehouse not found");
   if (warehouse.status !== "ACTIVE") {
     throw AppError.badRequest("Cannot receive into an inactive warehouse");
   }
@@ -90,10 +90,10 @@ exports.getById = async (id, user) => {
 
 exports.create = async (payload, user) => {
   tenant.assertWarehouseAccess(user, payload.warehouseId);
-  await assertWarehouse(payload.warehouseId);
+  await assertWarehouse(payload.warehouseId, user);
   if (payload.purchaseOrderId) {
     const po = await PurchaseOrder.findByPk(payload.purchaseOrderId);
-    if (!po) throw AppError.badRequest("Purchase order not found");
+    tenant.assertOwned(user, po, "Purchase order not found");
     if (po.status === "CANCELLED") {
       throw AppError.badRequest("Cannot receive against a cancelled purchase order");
     }
@@ -121,13 +121,13 @@ exports.create = async (payload, user) => {
   });
 };
 
-exports.update = async (id, payload) => {
+exports.update = async (id, payload, user) => {
   const receipt = await stockReceiptRepository.findById(id);
-  if (!receipt) throw AppError.notFound("Stock receipt not found");
+  tenant.assertOwned(user, receipt, "Stock receipt not found");
   if (receipt.status !== "DRAFT") {
     throw AppError.badRequest("Only draft receipts can be updated");
   }
-  if (payload.warehouseId) await assertWarehouse(payload.warehouseId);
+  if (payload.warehouseId) await assertWarehouse(payload.warehouseId, user);
   const purchaseOrderId =
     payload.purchaseOrderId !== undefined
       ? payload.purchaseOrderId
@@ -154,10 +154,11 @@ exports.update = async (id, payload) => {
   });
 };
 
-exports.complete = async (id, userId) => {
+exports.complete = async (id, user) => {
+  const userId = user.id;
   return sequelize.transaction(async (transaction) => {
     const receipt = await stockReceiptRepository.findByIdForUpdate(id, transaction);
-    if (!receipt) throw AppError.notFound("Stock receipt not found");
+    tenant.assertOwned(user, receipt, "Stock receipt not found");
     if (receipt.status === "COMPLETED") {
       const existing = await stockReceiptRepository.findById(id, transaction);
       return stockReceiptRepository.toPublic(existing);
@@ -169,7 +170,7 @@ exports.complete = async (id, userId) => {
       throw AppError.badRequest("Cannot complete a receipt with no items");
     }
 
-    await assertWarehouse(receipt.warehouseId);
+    await assertWarehouse(receipt.warehouseId, user);
 
     if (receipt.purchaseOrderId) {
       for (const item of receipt.items) {
@@ -229,9 +230,9 @@ exports.complete = async (id, userId) => {
   });
 };
 
-exports.cancel = async (id) => {
+exports.cancel = async (id, user) => {
   const receipt = await stockReceiptRepository.findById(id);
-  if (!receipt) throw AppError.notFound("Stock receipt not found");
+  tenant.assertOwned(user, receipt, "Stock receipt not found");
   if (receipt.status !== "DRAFT") {
     throw AppError.badRequest("Only draft receipts can be cancelled");
   }

@@ -28,9 +28,10 @@ const toPublic = (row) => {
 
 exports.toPublic = toPublic;
 
-exports.searchWhere = ({ search, category, from, to }) => {
+exports.searchWhere = ({ search, category, paymentMethod, from, to }) => {
   const where = {};
   if (category) where.category = category;
+  if (paymentMethod) where.paymentMethod = paymentMethod;
   if (from || to) {
     where.expenseDate = {};
     if (from) where.expenseDate[Op.gte] = from;

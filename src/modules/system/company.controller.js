@@ -2,12 +2,13 @@ const catchAsync = require("../../shared/helpers/catchAsync.helper");
 const { sendSuccess } = require("../../shared/helpers/response.helper");
 const models = require("../../database/models");
 const tenant = require("../../shared/helpers/tenant.helper");
+const vat = require("../../shared/helpers/vat.helper");
 
 const { CompanyProfile } = models;
 
 const toPublic = (row) => {
   if (!row) {
-    return { name: "", address: "", phone: "", email: "", tin: "" };
+    return { name: "", address: "", phone: "", email: "", tin: "", vatRate: vat.rate() };
   }
   const plain = row.toJSON();
   return {
@@ -17,6 +18,7 @@ const toPublic = (row) => {
     phone: plain.phone || "",
     email: plain.email || "",
     tin: plain.tin || "",
+    vatRate: vat.rate(),
   };
 };
 

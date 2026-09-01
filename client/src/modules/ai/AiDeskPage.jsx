@@ -1,129 +1,159 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, money } from "../../api/client";
-import { isOwner } from "../../auth/access";
-import { useAuth } from "../../auth/AuthContext";
+import InventoryLoading from "../../components/InventoryLoading";
 
-const SUGGESTIONS = [
-  "Show my profit this month",
-  "Which products are losing money?",
-  "Who is my best salesman?",
-  "Which warehouse is performing best?",
-  "What should I purchase?",
-  "Which products are not moving?",
-  "Compare this month with last month",
-  "Show me sales performance by salesman",
-  "Which products have the highest margin?",
-  "Where am I losing money?",
-  "የዚህ ወር ትርፌ ስንት ነው?",
-  "በጣም ትርፋማ የሆነው ምርት የትኛው ነው?",
+const TABS = [
+  { id: "daily", label: "Daily AI Summary" },
+  { id: "monthly", label: "Monthly AI Summary" },
+  { id: "insights", label: "AI Insights" },
+  { id: "profit", label: "Profit & Loss items" },
 ];
 
-const PERIODS = [
-  { value: "today", label: "Today" },
-  { value: "this_week", label: "This week" },
-  { value: "this_month", label: "This month" },
-  { value: "last_month", label: "Last month" },
-  { value: "this_year", label: "This year" },
-];
-
-function BarChart({ points }) {
-  const rows = points || [];
-  const max = Math.max(...rows.map((row) => Number(row.revenue || 0)), 1);
-  if (!rows.length) return <p className="muted">No sales in this period.</p>;
+function NarrativeBox({ narrative }) {
+  if (!narrative) return null;
   return (
-    <div className="ai-bars">
-      {rows.slice(-14).map((row) => (
-        <div key={row.date} className="ai-bar-row">
-          <span>{String(row.date).slice(5, 10)}</span>
-          <div className="ai-bar-track">
-            <div className="ai-bar-fill" style={{ width: `${(Number(row.revenue) / max) * 100}%` }} />
-          </div>
-          <strong>{money(row.revenue)}</strong>
-        </div>
+    <article className="ai-narrative card">
+      <h3 style={{ marginTop: 0 }}>{narrative.headline || "AI summary"}</h3>
+      {(narrative.bullets || []).length ? (
+        <ul className="ai-bullets">
+          {narrative.bullets.map((b, i) => (
+            <li key={i}>{b}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">No narrative yet.</p>
+      )}
+    </article>
+  );
+}
+
+function StatGrid({ items }) {
+  return (
+    <section className="grid stats ai-summary-stats">
+      {items.map((item) => (
+        <article key={item.label} className="card stat-card ai-stat-green">
+          <span className="muted">{item.label}</span>
+          <b>{item.value}</b>
+        </article>
       ))}
-    </div>
+    </section>
+  );
+}
+
+function SimpleTable({ title, columns, rows, empty = "No rows" }) {
+  return (
+    <article className="card ai-panel-card">
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      {!rows?.length ? (
+        <p className="muted">{empty}</p>
+      ) : (
+        <div className="ai-table-wrap">
+          <table className="ai-result-table">
+            <thead>
+              <tr>
+                {columns.map((col) => (
+                  <th key={col.key}>{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr key={row.id || row.name || i}>
+                  {columns.map((col) => (
+                    <td key={col.key}>{col.render ? col.render(row) : row[col.key] ?? "—"}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
   );
 }
 
 export default function AiDeskPage() {
-  const { user } = useAuth();
-  const [period, setPeriod] = useState("this_month");
+  const [tab, setTab] = useState("daily");
   const [warehouseId, setWarehouseId] = useState("");
-  const [salesmanId, setSalesmanId] = useState("");
   const [warehouses, setWarehouses] = useState([]);
-  const [salesmen, setSalesmen] = useState([]);
   const [dashboard, setDashboard] = useState(null);
-  const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [daily, setDaily] = useState(null);
+  const [monthly, setMonthly] = useState(null);
+  const [insights, setInsights] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const filters = {
-    period,
-    warehouseId: warehouseId || undefined,
-    salesmanId: salesmanId || undefined,
+  const query = { warehouseId: warehouseId || undefined };
+
+  const loadCore = async () => {
+    const res = await api("/api/ai/dashboard", { query });
+    setDashboard(res.data.dashboard);
   };
 
-  const load = async () => {
-    const res = await api("/api/ai/dashboard", { query: filters });
-    setDashboard(res.data.dashboard);
+  const loadTab = async (nextTab = tab) => {
+    setBusy(true);
+    setError("");
+    try {
+      if (nextTab === "daily") {
+        const res = await api("/api/ai/summary/daily", { query });
+        setDaily(res.data.summary);
+      } else if (nextTab === "monthly" || nextTab === "profit") {
+        const res = await api("/api/ai/summary/monthly", { query });
+        setMonthly(res.data.summary);
+      } else if (nextTab === "insights") {
+        const res = await api("/api/ai/summary/insights", { query });
+        setInsights(res.data.board);
+      }
+    } catch (err) {
+      setError(err.message || "Failed to load AI summary");
+    } finally {
+      setBusy(false);
+    }
   };
 
   useEffect(() => {
     api("/api/warehouses")
       .then((res) => setWarehouses(res.data.warehouses || []))
       .catch(() => {});
-    if (isOwner(user)) {
-      api("/api/team")
-        .then((res) => setSalesmen(res.data.salesmen || []))
-        .catch(() => {});
-    }
-    load().catch((err) => setError(err.message));
+    loadCore().catch((err) => setError(err.message));
+    loadTab("daily");
   }, []);
 
-  const ask = async (text) => {
-    const next = (text || question).trim();
-    if (!next) return;
-    setBusy(true);
-    setError("");
-    setQuestion("");
-    try {
-      const res = await api("/api/ai/chat", {
-        method: "POST",
-        body: { question: next, filters },
-      });
-      const chat = res.data.chat;
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", text: next },
-        { role: "ai", chat },
-      ]);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+  const refresh = async () => {
+    await loadCore().catch((err) => setError(err.message));
+    await loadTab(tab);
   };
 
   const cards = dashboard?.cards || {};
+
+  if (!dashboard && !error) return <InventoryLoading message="Loading AI desk..." />;
 
   return (
     <div className="ai-desk">
       <div className="topbar">
         <div>
           <h1 style={{ margin: 0 }}>AI business desk</h1>
-          <p className="muted">Numbers come from your sales, stock, and purchase records. The assistant never invents figures.</p>
+          <p className="muted">
+            Daily and monthly analysis summarized by AI from your company records.
+          </p>
         </div>
+        <Link className="btn saffron" to="/ai/assistant">
+         NegadaStock AI Assistant
+        </Link>
       </div>
 
       <div className="card">
-        <div className="period-row">
-          {PERIODS.map((row) => (
+        <div className="period-row ai-desk-tabs">
+          {TABS.map((row) => (
             <button
-              key={row.value}
+              key={row.id}
               type="button"
-              className={`period-chip${period === row.value ? " active" : ""}`}
-              onClick={() => setPeriod(row.value)}
+              className={`period-chip${tab === row.id ? " active" : ""}`}
+              onClick={() => {
+                setTab(row.id);
+                loadTab(row.id);
+              }}
             >
               {row.label}
             </button>
@@ -132,118 +162,260 @@ export default function AiDeskPage() {
         <div className="catalog-fields" style={{ marginTop: 12 }}>
           <label className="field">
             <span>Warehouse</span>
-            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+            <select
+              value={warehouseId}
+              onChange={(e) => setWarehouseId(e.target.value)}
+            >
               <option value="">All stores I can see</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
             </select>
           </label>
-          {salesmen.length ? (
-            <label className="field">
-              <span>Salesman</span>
-              <select value={salesmanId} onChange={(e) => setSalesmanId(e.target.value)}>
-                <option value="">All salesmen</option>
-                {salesmen.map((s) => (
-                  <option key={s.id} value={s.id}>{s.fullName}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
         </div>
-        <button type="button" className="btn" style={{ marginTop: 12 }} onClick={() => load().catch((err) => setError(err.message))}>
-          Refresh dashboard
+        <button type="button" className="btn" style={{ marginTop: 12 }} disabled={busy} onClick={refresh}>
+          {busy ? "Refreshing…" : "Refresh analysis"}
         </button>
       </div>
 
       <section className="grid stats" style={{ marginTop: 16 }}>
-        <article className="card stat-card"><span className="muted">Today's sales</span><b>{money(cards.todaySales)}</b></article>
+        <article className="card stat-card"><span className="muted">Today&apos;s sales</span><b>{money(cards.todaySales)}</b></article>
         <article className="card stat-card"><span className="muted">Monthly sales</span><b>{money(cards.monthlySales)}</b></article>
         <article className="card stat-card"><span className="muted">Monthly gross profit</span><b>{money(cards.monthlyGrossProfit)}</b></article>
         <article className="card stat-card"><span className="muted">Profit margin</span><b>{cards.profitMargin == null ? "n/a" : `${cards.profitMargin}%`}</b></article>
-        <article className="card stat-card"><span className="muted">Inventory value</span><b>{money(cards.totalInventoryValue)}</b></article>
         <article className="card stat-card"><span className="muted">Low stock items</span><b>{cards.lowStockCount ?? 0}</b></article>
-        <article className="card stat-card"><span className="muted">Dead stock value</span><b>{money(cards.deadStockValue)}</b></article>
-        <article className="card stat-card"><span className="muted">Sales growth</span><b>{cards.salesGrowth == null ? "n/a" : `${cards.salesGrowth}%`}</b></article>
+        <article className="card stat-card"><span className="muted">Loss-making products</span><b>{cards.lossMakingCount ?? 0}</b></article>
         <article className="card stat-card"><span className="muted">Top product</span><b>{cards.topProduct?.name || "—"}</b><small>{cards.topProduct ? money(cards.topProduct.profit) : ""}</small></article>
         <article className="card stat-card"><span className="muted">Top salesman</span><b>{cards.topSalesman?.name || "—"}</b><small>{cards.topSalesman ? money(cards.topSalesman.revenue) : ""}</small></article>
-        <article className="card stat-card"><span className="muted">Top warehouse</span><b>{cards.topWarehouse?.name || "—"}</b><small>{cards.topWarehouse ? money(cards.topWarehouse.revenue) : ""}</small></article>
-        <article className="card stat-card"><span className="muted">Loss-making products</span><b>{cards.lossMakingCount ?? 0}</b></article>
       </section>
 
-      <div className="grid split" style={{ marginTop: 16 }}>
-        <article className="card">
-          <h3>Sales trend</h3>
-          <BarChart points={dashboard?.trend?.points} />
-        </article>
-        <article className="card">
-          <h3>AI insights</h3>
-          {(dashboard?.insights || []).length === 0 ? (
-            <p className="muted">Complete sales this month to generate insights.</p>
-          ) : (
-            (dashboard.insights || []).map((row, index) => (
-              <div key={index} className="ai-insight">
-                <p>{row.text}</p>
-                <small className="muted">{row.period}</small>
-              </div>
-            ))
-          )}
-        </article>
-      </div>
+      {error ? <p className="error" style={{ marginTop: 12 }}>{error}</p> : null}
+      {busy && !daily && !monthly && !insights ? (
+        <InventoryLoading message="Building AI summary…" />
+      ) : null}
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2 style={{ marginTop: 0 }}>Ask the assistant</h2>
-        <div className="period-row">
-          {SUGGESTIONS.map((item) => (
-            <button key={item} type="button" className="period-chip" onClick={() => ask(item)}>
-              {item}
-            </button>
-          ))}
-        </div>
-        <form
-          className="ai-chat-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            ask();
-          }}
-        >
-          <input
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="English, አማርኛ, or Afaan Oromo"
+      {tab === "daily" && daily ? (
+        <div className="ai-summary-block">
+          <NarrativeBox narrative={daily.narrative} />
+          <StatGrid
+            items={[
+              { label: "Today's sales", value: money(daily.cards.sales) },
+              { label: "Purchases", value: money(daily.cards.purchases) },
+              { label: "Profit", value: money(daily.cards.profit) },
+              { label: "Margin", value: daily.cards.profitMargin == null ? "n/a" : `${daily.cards.profitMargin}%` },
+              { label: "Invoices", value: daily.cards.invoices ?? 0 },
+              { label: "Low-stock items", value: daily.cards.lowStockCount ?? 0 },
+            ]}
           />
-          <button className="btn saffron" disabled={busy}>{busy ? "Thinking…" : "Ask"}</button>
-        </form>
-        {error ? <p className="error">{error}</p> : null}
-        <div className="ai-thread">
-          {messages.map((msg, index) => (
-            <div key={index} className={`ai-msg ${msg.role}`}>
-              {msg.role === "user" ? (
-                <p>{msg.text}</p>
-              ) : (
-                <>
-                  <p>{msg.chat.answer}</p>
-                  <dl className="ai-keys">
-                    {Object.entries(msg.chat.keyNumbers || {}).map(([key, value]) =>
-                      value == null ? null : (
-                        <div key={key}>
-                          <dt>{key}</dt>
-                          <dd>{String(value)}</dd>
-                        </div>
-                      ),
-                    )}
-                  </dl>
-                  <p className="muted">{msg.chat.explanation}</p>
-                  <p><strong>Recommendation:</strong> {msg.chat.recommendation}</p>
-                  <small className="muted">
-                    {msg.chat.source?.period} · {msg.chat.source?.from} → {msg.chat.source?.to} · records {msg.chat.source?.recordsAnalyzed} · {msg.chat.source?.calculation} · updated {msg.chat.source?.lastUpdated}
-                  </small>
-                </>
-              )}
-            </div>
-          ))}
+          <div className="grid split" style={{ marginTop: 16 }}>
+            <SimpleTable
+              title="Stock movements today"
+              columns={[
+                { key: "type", label: "Type" },
+                { key: "txnCount", label: "Transactions" },
+                { key: "quantity", label: "Quantity", render: (r) => String(r.quantity ?? "—") },
+              ]}
+              rows={daily.lists.stockMovements}
+            />
+            <SimpleTable
+              title="Top-selling products"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "quantity", label: "Qty" },
+                { key: "revenue", label: "Revenue", render: (r) => money(r.revenue) },
+              ]}
+              rows={daily.lists.topSelling}
+            />
+          </div>
+          <div className="grid split" style={{ marginTop: 16 }}>
+            <SimpleTable
+              title="Low-stock items"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "warehouse", label: "Store" },
+                { key: "quantity", label: "On hand" },
+              ]}
+              rows={daily.lists.lowStock}
+            />
+            <SimpleTable
+              title="Items giving profit today"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "profit", label: "Profit", render: (r) => money(r.profit) },
+                { key: "margin", label: "Margin", render: (r) => (r.margin == null ? "—" : `${r.margin}%`) },
+              ]}
+              rows={daily.lists.topProfit}
+            />
+          </div>
         </div>
-      </section>
+      ) : null}
+
+      {tab === "monthly" && monthly ? (
+        <div className="ai-summary-block">
+          <NarrativeBox narrative={monthly.narrative} />
+          <StatGrid
+            items={[
+              { label: "Sales performance", value: money(monthly.cards.sales) },
+              { label: "Purchase total", value: money(monthly.cards.purchases) },
+              { label: "Gross profit", value: money(monthly.cards.profit) },
+              { label: "COGS", value: money(monthly.cards.cogs) },
+              { label: "Margin", value: monthly.cards.profitMargin == null ? "n/a" : `${monthly.cards.profitMargin}%` },
+              { label: "Loss-making SKUs", value: monthly.cards.lossMakingCount ?? 0 },
+            ]}
+          />
+          <div className="grid split" style={{ marginTop: 16 }}>
+            <SimpleTable
+              title="Best products"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "profit", label: "Profit", render: (r) => money(r.profit) },
+                { key: "revenue", label: "Revenue", render: (r) => money(r.revenue) },
+              ]}
+              rows={monthly.lists.bestProducts}
+            />
+            <SimpleTable
+              title="Worst / loss products"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "profit", label: "Profit", render: (r) => money(r.profit) },
+                { key: "margin", label: "Margin", render: (r) => (r.margin == null ? "—" : `${r.margin}%`) },
+              ]}
+              rows={monthly.lists.worstProducts}
+            />
+          </div>
+          <div className="grid split" style={{ marginTop: 16 }}>
+            <SimpleTable
+              title="Store performance"
+              columns={[
+                { key: "name", label: "Store" },
+                { key: "revenue", label: "Sales", render: (r) => money(r.revenue) },
+                { key: "profit", label: "Profit", render: (r) => money(r.profit) },
+              ]}
+              rows={monthly.lists.stores}
+            />
+            <SimpleTable
+              title="Salesman performance"
+              columns={[
+                { key: "name", label: "Salesman" },
+                { key: "revenue", label: "Sales", render: (r) => money(r.revenue) },
+                { key: "invoices", label: "Invoices" },
+              ]}
+              rows={monthly.lists.salesmen}
+            />
+          </div>
+          <div className="grid split" style={{ marginTop: 16 }}>
+            <SimpleTable
+              title="Fast movers"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "quantity", label: "Qty sold" },
+                { key: "revenue", label: "Revenue", render: (r) => money(r.revenue) },
+              ]}
+              rows={monthly.lists.fastMoving}
+            />
+            <SimpleTable
+              title="Slow movers"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "quantity", label: "Qty sold" },
+                { key: "revenue", label: "Revenue", render: (r) => money(r.revenue) },
+              ]}
+              rows={monthly.lists.slowMoving}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {tab === "profit" && monthly ? (
+        <div className="ai-summary-block">
+          <NarrativeBox
+            narrative={{
+              headline: monthly.narrative?.headline || "Profit and loss by item",
+              bullets: [
+                `${(monthly.lists.bestProducts || []).length} profit-leading items this month.`,
+                `${(monthly.lists.worstProducts || []).length} loss-making items need attention.`,
+                ...(monthly.narrative?.bullets || []).slice(0, 3),
+              ],
+            }}
+          />
+          <div className="grid split" style={{ marginTop: 16 }}>
+            <SimpleTable
+              title="Items giving profit"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "quantity", label: "Qty" },
+                { key: "revenue", label: "Revenue", render: (r) => money(r.revenue) },
+                { key: "profit", label: "Profit", render: (r) => money(r.profit) },
+                { key: "margin", label: "Margin", render: (r) => (r.margin == null ? "—" : `${r.margin}%`) },
+              ]}
+              rows={monthly.lists.bestProducts}
+            />
+            <SimpleTable
+              title="Items giving loss"
+              columns={[
+                { key: "name", label: "Item" },
+                { key: "quantity", label: "Qty" },
+                { key: "revenue", label: "Revenue", render: (r) => money(r.revenue) },
+                { key: "profit", label: "Loss", render: (r) => money(r.profit) },
+                { key: "margin", label: "Margin", render: (r) => (r.margin == null ? "—" : `${r.margin}%`) },
+              ]}
+              rows={monthly.lists.worstProducts}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {tab === "insights" && insights ? (
+        <div className="ai-summary-block">
+          <NarrativeBox narrative={insights.narrative} />
+          <div className="ai-insight-grid">
+            {(insights.prompts || []).map((prompt) => (
+              <article key={prompt.id} className="card ai-insight-card">
+                <h3 style={{ marginTop: 0 }}>{prompt.question}</h3>
+                <p className="muted">{prompt.answerHint}</p>
+                {(prompt.items || []).length === 0 ? (
+                  <p className="muted">No matching items right now.</p>
+                ) : (
+                  <ul className="ai-insight-list">
+                    {prompt.items.slice(0, 5).map((item, i) => (
+                      <li key={item.id || item.name || i}>
+                        <strong>{item.name || "—"}</strong>
+                        <span className="muted">
+                          {item.warehouse ? ` · ${item.warehouse}` : ""}
+                          {item.quantity != null ? ` · qty ${item.quantity}` : ""}
+                          {item.profit != null ? ` · ${money(item.profit)}` : ""}
+                          {item.revenue != null && item.profit == null ? ` · ${money(item.revenue)}` : ""}
+                          {item.suggestedQty != null ? ` · reorder ${item.suggestedQty}` : ""}
+                          {item.reason ? ` · ${item.reason}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(prompt.stores || []).length ? (
+                  <ul className="ai-insight-list">
+                    {prompt.stores.map((store, i) => (
+                      <li key={store.name || i}>
+                        <strong>{store.name}</strong>
+                        <span className="muted"> · profit {money(store.profit)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <Link className="btn ai-ask-link" to={`/ai/assistant?q=${encodeURIComponent(prompt.question)}`}>
+                  Ask assistant
+                </Link>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Need a custom answer?</h3>
+        <p className="muted">Open the NegadaStock AI Assistant tab to ask free-form questions with Smart Clarify.</p>
+        <Link className="btn saffron" to="/ai/assistant">Open negade stock AI assistant</Link>
+      </div>
     </div>
   );
 }

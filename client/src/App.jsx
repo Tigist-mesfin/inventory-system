@@ -7,26 +7,39 @@ import RegisterPage from "./modules/auth/RegisterPage";
 import TeamPage from "./modules/auth/TeamPage";
 import DashboardPage from "./modules/dashboard/DashboardPage";
 import StockPage from "./modules/inventory/StockPage";
+import StockImportPage from "./modules/inventory/StockImportPage";
 import SalesPage from "./modules/sales/SalesPage";
+import SaleImportPage from "./modules/sales/SaleImportPage";
 import CustomerOrdersPage from "./modules/sales/CustomerOrdersPage";
 import SaleFormPage from "./modules/sales/SaleFormPage";
 import InvoicePage from "./modules/sales/InvoicePage";
+import ProformaPage from "./modules/sales/ProformaPage";
+import PublicProformaPage from "./modules/sales/PublicProformaPage";
+import PublicInvoicePage from "./modules/sales/PublicInvoicePage";
 import CustomersPage from "./modules/customers/CustomersPage";
+import CustomerWalletsPage from "./modules/customers/CustomerWalletsPage";
+import ItemHistoryPage from "./modules/catalog/ItemHistoryPage";
 import CatalogPage from "./modules/catalog/CatalogPage";
 import WarehousesPage from "./modules/warehouse/WarehousesPage";
 import PurchasingPage from "./modules/purchasing/PurchasingPage";
+import PurchaseImportPage from "./modules/purchasing/PurchaseImportPage";
 import TransfersPage from "./modules/inventory/TransfersPage";
 import MorePage from "./modules/more/MorePage";
 import CompanyProfilePage from "./modules/more/CompanyProfilePage";
 import PaymentMethodsPage from "./modules/sales/PaymentMethodsPage";
+import VatPage from "./modules/sales/VatPage";
 import LedgerPage from "./modules/sales/LedgerPage";
 import ExpensesPage from "./modules/finance/ExpensesPage";
+import OtherIncomePage from "./modules/finance/OtherIncomePage";
 import IncomeStatementPage from "./modules/finance/IncomeStatementPage";
 import AiDeskPage from "./modules/ai/AiDeskPage";
+import AiAssistantPage from "./modules/ai/AiAssistantPage";
+import ReportsPage from "./modules/insights/ReportsPage";
+import InventoryLoading from "./components/InventoryLoading";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <p className="muted" style={{ padding: 24 }}>Opening the desk…</p>;
+  if (loading) return <InventoryLoading fullScreen message="Loading inventory..." />;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -43,12 +56,43 @@ function CanOwner({ children }) {
   return children;
 }
 
-function AiGate() {
+function AiGate({ children }) {
   const { user } = useAuth();
   if (!canAny(user, [["sales", "READ"], ["inventory", "READ"], ["finance", "READ"], ["purchasing", "READ"], ["insights", "READ"]])) {
     return <Navigate to="/" replace />;
   }
-  return <AiDeskPage />;
+  return children;
+}
+
+function ReportsGate() {
+  const { user } = useAuth();
+  if (
+    !canAny(user, [
+      ["sales", "READ"],
+      ["purchasing", "READ"],
+      ["insights", "READ"],
+      ["finance", "READ"],
+    ])
+  ) {
+    return <Navigate to="/" replace />;
+  }
+  return <ReportsPage />;
+}
+
+function ItemHistoryGate() {
+  const { user } = useAuth();
+  if (!canAny(user, [["catalog", "READ"], ["inventory", "READ"], ["sales", "READ"], ["purchasing", "READ"]])) {
+    return <Navigate to="/" replace />;
+  }
+  return <ItemHistoryPage />;
+}
+
+function StockImportGate() {
+  const { user } = useAuth();
+  if (!canAny(user, [["inventory", "UPDATE"], ["inventory", "CREATE"]])) {
+    return <Navigate to="/stock" replace />;
+  }
+  return <StockImportPage />;
 }
 
 function LedgerGate() {
@@ -59,11 +103,28 @@ function LedgerGate() {
   return <LedgerPage />;
 }
 
+function VatGate() {
+  const { user } = useAuth();
+  if (
+    !canAny(user, [
+      ["sales", "READ"],
+      ["purchasing", "READ"],
+      ["finance", "READ"],
+      ["insights", "READ"],
+    ])
+  ) {
+    return <Navigate to="/" replace />;
+  }
+  return <VatPage />;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+        <Route path="/p/:token" element={<PublicProformaPage />} />
+        <Route path="/i/:token" element={<PublicInvoicePage />} />
       <Route
         element={
           <Protected>
@@ -72,19 +133,30 @@ export default function App() {
         }
       >
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/ai" element={<AiGate />} />
+        <Route path="/ai" element={<AiGate><AiDeskPage /></AiGate>} />
+        <Route path="/ai/assistant" element={<AiGate><AiAssistantPage /></AiGate>} />
         <Route path="/stock" element={<Can module="inventory" action="READ"><StockPage /></Can>} />
+        <Route path="/stock/import" element={<StockImportGate />} />
         <Route path="/orders" element={<Can module="sales" action="READ"><CustomerOrdersPage /></Can>} />
+        <Route path="/orders/:id/proforma" element={<Can module="sales" action="READ"><ProformaPage /></Can>} />
         <Route path="/sell" element={<Can module="sales" action="READ"><SalesPage /></Can>} />
+        <Route path="/sell/import" element={<Can module="sales" action="CREATE"><SaleImportPage /></Can>} />
         <Route path="/sell/new" element={<Can module="sales" action="CREATE"><SaleFormPage /></Can>} />
+        <Route path="/sell/:id/edit" element={<Can module="sales" action="UPDATE"><SaleFormPage /></Can>} />
         <Route path="/sell/:id" element={<Can module="sales" action="READ"><InvoicePage /></Can>} />
         <Route path="/ledger" element={<LedgerGate />} />
+        <Route path="/vat" element={<VatGate />} />
+        <Route path="/reports" element={<ReportsGate />} />
         <Route path="/expenses" element={<Can module="finance" action="READ"><ExpensesPage /></Can>} />
+        <Route path="/other-income" element={<Can module="finance" action="READ"><OtherIncomePage /></Can>} />
         <Route path="/income-statement" element={<Can module="finance" action="READ"><IncomeStatementPage /></Can>} />
         <Route path="/customers" element={<Can module="customers" action="READ"><CustomersPage /></Can>} />
+        <Route path="/customers/wallets" element={<Can module="customers" action="READ"><CustomerWalletsPage /></Can>} />
         <Route path="/catalog" element={<Can module="catalog" action="READ"><CatalogPage /></Can>} />
+        <Route path="/catalog/:id/history" element={<ItemHistoryGate />} />
         <Route path="/warehouses" element={<Can module="warehouse" action="READ"><WarehousesPage /></Can>} />
         <Route path="/buy" element={<Can module="purchasing" action="READ"><PurchasingPage /></Can>} />
+        <Route path="/buy/import" element={<Can module="purchasing" action="CREATE"><PurchaseImportPage /></Can>} />
         <Route path="/transfers" element={<Can module="inventory" action="READ"><TransfersPage /></Can>} />
         <Route path="/payment-methods" element={<Can module="sales" action="READ"><PaymentMethodsPage /></Can>} />
         <Route path="/company-profile" element={<CanOwner><CompanyProfilePage /></CanOwner>} />

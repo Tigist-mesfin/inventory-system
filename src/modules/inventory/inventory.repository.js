@@ -141,6 +141,7 @@ exports.findAndCount = async ({ where, productWhere, limit, offset }) => {
 };
 
 exports.findAllForOverview = async (where = {}) => {
+  const companyId = where.companyId;
   const rows = await Inventory.findAll({
     where,
     include: [
@@ -148,11 +149,31 @@ exports.findAllForOverview = async (where = {}) => {
         model: Product,
         as: "product",
         attributes: ["id", "name", "unit", "reorderLevel"],
+        ...(companyId ? { where: { companyId }, required: true } : {}),
       },
       warehouseInclude,
     ],
   });
   return rows.map(toPublic);
+};
+
+exports.findAllForList = async ({ where, productWhere }) => {
+  const rows = await Inventory.findAll({
+    where,
+    include: [
+      {
+        ...productInclude,
+        where: Object.keys(productWhere).length ? productWhere : undefined,
+        required: Object.keys(productWhere).length > 0,
+      },
+      warehouseInclude,
+    ],
+    order: [
+      [{ model: Product, as: "product" }, "name", "ASC"],
+      [{ model: Warehouse, as: "warehouse" }, "name", "ASC"],
+    ],
+  });
+  return attachLastDeliveredAt(rows.map(toPublic));
 };
 
 exports.findById = async (id) =>

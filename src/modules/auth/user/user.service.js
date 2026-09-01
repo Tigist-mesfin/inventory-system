@@ -72,7 +72,7 @@ exports.create = async (payload, actor) => {
 
 exports.update = async (id, payload, actor) => {
   const user = await userRepository.findById(id);
-  if (!user) throw AppError.notFound("User not found");
+  tenant.assertOwned(actor, user, "User not found");
 
   if (payload.username && payload.username !== user.username) {
     const taken = await userRepository.findByUsername(payload.username);
@@ -110,7 +110,7 @@ exports.update = async (id, payload, actor) => {
 
 exports.resetPassword = async (id, newPassword, actor) => {
   const user = await userRepository.findById(id);
-  if (!user) throw AppError.notFound("User not found");
+  tenant.assertOwned(actor, user, "User not found");
   if (user.status !== "ACTIVE") {
     throw AppError.badRequest("Cannot reset password for a non-active user");
   }
@@ -134,7 +134,7 @@ exports.resetPassword = async (id, newPassword, actor) => {
 
 exports.remove = async (id, actor) => {
   const user = await userRepository.findById(id);
-  if (!user) throw AppError.notFound("User not found");
+  tenant.assertOwned(actor, user, "User not found");
   if (actor?.id === user.id) {
     throw AppError.forbidden("You cannot delete your own account");
   }

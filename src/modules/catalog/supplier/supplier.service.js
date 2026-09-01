@@ -48,9 +48,9 @@ exports.create = async (payload, transaction, user) => {
   return supplierRepository.toPublic(supplier);
 };
 
-exports.update = async (id, payload) => {
+exports.update = async (id, payload, user) => {
   const supplier = await supplierRepository.findById(id);
-  if (!supplier) throw AppError.notFound("Supplier not found");
+  tenant.assertOwned(user, supplier, "Supplier not found");
 
   if (payload.name !== undefined) supplier.name = payload.name;
   if (payload.contactPerson !== undefined) {
@@ -70,9 +70,9 @@ exports.update = async (id, payload) => {
   return supplierRepository.toPublic(saved);
 };
 
-exports.remove = async (id) => {
+exports.remove = async (id, user) => {
   const supplier = await supplierRepository.findById(id);
-  if (!supplier) throw AppError.notFound("Supplier not found");
+  tenant.assertOwned(user, supplier, "Supplier not found");
 
   const poCount = await supplierRepository.countPurchaseOrders(id);
   if (poCount > 0) {

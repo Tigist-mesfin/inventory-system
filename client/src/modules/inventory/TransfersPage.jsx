@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
+import InventoryLoading from "../../components/InventoryLoading";
 
 export default function TransfersPage() {
   const [warehouses, setWarehouses] = useState([]);
   const [products, setProducts] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [form, setForm] = useState({ sourceWarehouseId: "", destinationWarehouseId: "", productId: "", quantity: 1 });
+  const [ready, setReady] = useState(false);
 
   const load = async () => {
     const [w, p, t] = await Promise.all([
@@ -23,7 +25,13 @@ export default function TransfersPage() {
     }));
   };
 
-  useEffect(() => { load().catch(() => {}); }, []);
+  useEffect(() => {
+    load()
+      .catch(() => {})
+      .finally(() => setReady(true));
+  }, []);
+
+  if (!ready) return <InventoryLoading message="Loading inventory..." />;
 
   return (
     <>

@@ -14,6 +14,12 @@ export default function TradeTabs() {
         Sales
       </NavLink>
       <NavLink
+        to="/reports"
+        className={({ isActive }) => `btn ${isActive ? "" : "secondary"}`}
+      >
+        Reports
+      </NavLink>
+      <NavLink
         to="/ledger"
         className={({ isActive }) => `btn ${isActive ? "" : "secondary"}`}
       >

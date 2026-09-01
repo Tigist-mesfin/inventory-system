@@ -26,16 +26,16 @@ exports.create = catchAsync(async (req, res) => {
 });
 
 exports.update = catchAsync(async (req, res) => {
-  const receipt = await stockReceiptService.update(req.params.id, req.body);
+  const receipt = await stockReceiptService.update(req.params.id, req.body, req.user);
   sendSuccess(res, { data: { receipt }, message: "Stock receipt updated" });
 });
 
 exports.complete = catchAsync(async (req, res) => {
-  const receipt = await stockReceiptService.complete(req.params.id, req.user.id);
+  const receipt = await stockReceiptService.complete(req.params.id, req.user);
   sendSuccess(res, { data: { receipt }, message: "Stock receipt completed" });
 });
 
 exports.cancel = catchAsync(async (req, res) => {
-  const receipt = await stockReceiptService.cancel(req.params.id);
+  const receipt = await stockReceiptService.cancel(req.params.id, req.user);
   sendSuccess(res, { data: { receipt }, message: "Stock receipt cancelled" });
 });

@@ -84,6 +84,13 @@ module.exports = (sequelize, DataTypes) => {
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });
+
+    SaleItem.hasMany(models.SaleCostAllocation, {
+      foreignKey: "saleItemId",
+      as: "costAllocations",
+      onDelete: "CASCADE",
+      onUpdate: "CASCADE",
+    });
   };
 
   return SaleItem;

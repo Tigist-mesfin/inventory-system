@@ -194,8 +194,8 @@ module.exports = async () => {
   );
 
   await seedAdminUser(role);
-  await seedPaymentMethods();
   await require("./seedDemo")();
+  await seedPaymentMethods();
 };
 
 async function seedPaymentMethods() {

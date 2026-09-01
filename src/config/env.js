@@ -4,6 +4,7 @@ module.exports = {
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
   APP_URL: process.env.APP_URL,
+  APP_NAME: process.env.APP_NAME || "Inventory Management System",
   FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:5173",
 
   DB_HOST: process.env.DB_HOST,
@@ -22,6 +23,14 @@ module.exports = {
   ADMIN_SEED_PASSWORD: process.env.ADMIN_SEED_PASSWORD,
   ADMIN_SEED_PHONE: process.env.ADMIN_SEED_PHONE,
 
+  DEMO_COMPANY_NAME:
+    process.env.DEMO_COMPANY_NAME || "Abdu Building Materials",
+  DEMO_COMPANY_USERNAME: process.env.DEMO_COMPANY_USERNAME || "abdu",
+  DEMO_COMPANY_PASSWORD: process.env.DEMO_COMPANY_PASSWORD || "123456",
+  DEMO_COMPANY_PHONE: process.env.DEMO_COMPANY_PHONE || "251911223344",
+  DEMO_COMPANY_ADDRESS:
+    process.env.DEMO_COMPANY_ADDRESS || "Merkato, Addis Ababa",
+
   SMTP_HOST: process.env.SMTP_HOST,
   SMTP_PORT: process.env.SMTP_PORT,
   SMTP_SECURE: process.env.SMTP_SECURE,
@@ -34,8 +43,16 @@ module.exports = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-4o-mini",
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
-  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-2.0-flash",
+  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-3.6-flash",
 
-  COOKIE_SECURE: process.env.COOKIE_SECURE === "true",
+  VAT_RATE: parseFloat(process.env.VAT_RATE || "15"),
+  COOKIE_SECURE:
+    process.env.COOKIE_SECURE === "true" ||
+    (process.env.NODE_ENV === "production" &&
+      process.env.COOKIE_SECURE !== "false"),
+  COOKIE_SAMESITE: (
+    process.env.COOKIE_SAMESITE ||
+    (process.env.NODE_ENV === "production" ? "none" : "lax")
+  ).toLowerCase(),
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || "*",
 };

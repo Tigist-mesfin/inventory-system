@@ -1,10 +1,15 @@
 const ms = require("ms");
 const env = require("../../config/env");
 
+const sameSite = ["lax", "strict", "none"].includes(env.COOKIE_SAMESITE)
+  ? env.COOKIE_SAMESITE
+  : "lax";
+const secure = sameSite === "none" ? true : env.COOKIE_SECURE;
+
 const baseCookieOptions = {
   httpOnly: true,
-  secure: env.COOKIE_SECURE,
-  sameSite: "strict",
+  secure,
+  sameSite,
   path: "/",
 };
 

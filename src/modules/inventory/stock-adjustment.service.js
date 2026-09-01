@@ -7,6 +7,7 @@ const inventoryPosting = require("../../shared/services/inventoryPosting.service
 const models = require("../../database/models");
 const stockAdjustmentRepository = require("./stock-adjustment.repository");
 const tenant = require("../../shared/helpers/tenant.helper");
+const stockBatchService = require("./stock-batch.service");
 
 const { Product, Warehouse, Inventory } = models;
 
@@ -16,15 +17,19 @@ const emptyToNull = (value) => {
   return value;
 };
 
-const assertWarehouse = async (warehouseId) => {
+const assertWarehouse = async (warehouseId, user) => {
   const warehouse = await Warehouse.findByPk(warehouseId);
-  if (!warehouse) throw AppError.badRequest("Warehouse not found");
+  if (user) {
+    tenant.assertOwned(user, warehouse, "Warehouse not found");
+  } else if (!warehouse) {
+    throw AppError.badRequest("Warehouse not found");
+  }
   if (warehouse.status !== "ACTIVE") {
     throw AppError.badRequest("Cannot adjust an inactive warehouse");
   }
 };
 
-const buildLines = async (items, warehouseId) => {
+const buildLines = async (items, warehouseId, companyId) => {
   const ids = items.map((i) => i.productId);
   if (new Set(ids).size !== ids.length) {
     throw AppError.badRequest("Duplicate products are not allowed on an adjustment");
@@ -33,8 +38,15 @@ const buildLines = async (items, warehouseId) => {
   for (const item of items) {
     const product = await Product.findByPk(item.productId);
     if (!product) throw AppError.badRequest("Product not found");
+    if (companyId && product.companyId && product.companyId !== companyId) {
+      throw AppError.badRequest("Product not found");
+    }
     const inv = await Inventory.findOne({
-      where: { productId: item.productId, warehouseId },
+      where: {
+        productId: item.productId,
+        warehouseId,
+        ...(companyId ? { companyId } : {}),
+      },
     });
     const systemQuantity = decimal.qty(inv ? inv.quantity : 0);
     const actualQuantity = decimal.qty(item.actualQuantity);
@@ -70,8 +82,12 @@ exports.getById = async (id, user) => {
 
 exports.create = async (payload, user) => {
   tenant.assertWarehouseAccess(user, payload.warehouseId);
-  await assertWarehouse(payload.warehouseId);
-  const lines = await buildLines(payload.items, payload.warehouseId);
+  await assertWarehouse(payload.warehouseId, user);
+  const lines = await buildLines(
+    payload.items,
+    payload.warehouseId,
+    tenant.companyIdOf(user),
+  );
   return sequelize.transaction(async (transaction) => {
     const adjustmentNumber = await nextDocumentNumber(
       "STOCK_ADJUSTMENT",
@@ -99,15 +115,17 @@ exports.create = async (payload, user) => {
   });
 };
 
-exports.update = async (id, payload) => {
+exports.update = async (id, payload, user) => {
   const row = await stockAdjustmentRepository.findById(id);
-  if (!row) throw AppError.notFound("Stock adjustment not found");
+  tenant.assertOwned(user, row, "Stock adjustment not found");
   if (row.status !== "DRAFT") {
     throw AppError.badRequest("Only draft adjustments can be updated");
   }
   const warehouseId = payload.warehouseId || row.warehouseId;
-  await assertWarehouse(warehouseId);
-  const lines = payload.items ? await buildLines(payload.items, warehouseId) : null;
+  await assertWarehouse(warehouseId, user);
+  const lines = payload.items
+    ? await buildLines(payload.items, warehouseId, tenant.companyIdOf(user))
+    : null;
 
   return sequelize.transaction(async (transaction) => {
     const locked = await stockAdjustmentRepository.findByIdForUpdate(
@@ -128,13 +146,14 @@ exports.update = async (id, payload) => {
   });
 };
 
-exports.complete = async (id, userId) => {
+exports.complete = async (id, user) => {
+  const userId = user.id;
   return sequelize.transaction(async (transaction) => {
     const adjustment = await stockAdjustmentRepository.findByIdForUpdate(
       id,
       transaction,
     );
-    if (!adjustment) throw AppError.notFound("Stock adjustment not found");
+    tenant.assertOwned(user, adjustment, "Stock adjustment not found");
     if (adjustment.status === "COMPLETED") {
       const existing = await stockAdjustmentRepository.findById(id, transaction);
       return stockAdjustmentRepository.toPublic(existing);
@@ -154,6 +173,13 @@ exports.complete = async (id, userId) => {
 
     for (const item of adjustment.items) {
       const inv = locked[`${item.productId}|${adjustment.warehouseId}`];
+      await stockBatchService.adjustToActual(
+        {
+          inventory: inv,
+          actualQuantity: item.actualQuantity,
+        },
+        transaction,
+      );
       const result = await inventoryPosting.setOnHandToActual(
         {
           inventory: inv,
@@ -165,6 +191,7 @@ exports.complete = async (id, userId) => {
         },
         transaction,
       );
+      await stockBatchService.refreshAverageCost(inv, transaction);
       item.systemQuantity = decimal.subQty(
         item.actualQuantity,
         result.difference,
@@ -180,9 +207,9 @@ exports.complete = async (id, userId) => {
   });
 };
 
-exports.cancel = async (id) => {
+exports.cancel = async (id, user) => {
   const row = await stockAdjustmentRepository.findById(id);
-  if (!row) throw AppError.notFound("Stock adjustment not found");
+  tenant.assertOwned(user, row, "Stock adjustment not found");
   if (row.status !== "DRAFT") {
     throw AppError.badRequest("Only draft adjustments can be cancelled");
   }

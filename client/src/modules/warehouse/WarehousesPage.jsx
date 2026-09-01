@@ -1,15 +1,21 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
+import InventoryLoading from "../../components/InventoryLoading";
 
 export default function WarehousesPage() {
   const [rows, setRows] = useState([]);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
 
   const load = () => api("/api/warehouses").then((res) => setRows(res.data.warehouses));
   useEffect(() => {
-    load().catch((err) => setError(err.message));
+    load()
+      .catch((err) => setError(err.message))
+      .finally(() => setReady(true));
   }, []);
+
+  if (!ready) return <InventoryLoading message="Loading inventory..." />;
 
   return (
     <>

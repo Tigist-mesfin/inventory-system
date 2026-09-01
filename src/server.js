@@ -12,8 +12,8 @@ async function startServer() {
   await initDB();
   await seedAdmin();
 
-  server = app.listen(PORT, () => {
-    console.info(`🚀 Server running at http://localhost:${PORT}`);
+  server = app.listen(PORT, "0.0.0.0", () => {
+    console.info(`🚀 Server running at http://127.0.0.1:${PORT}`);
   });
 
   // Graceful shutdown

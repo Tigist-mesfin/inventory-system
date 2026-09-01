@@ -148,8 +148,22 @@ const authorizePermission =
     }
   };
 
+/** Company owner / admin only (not salesman permissions). */
+const authorizeOwner = () => (req, res, next) => {
+  try {
+    if (!req.user) throw AppError.unauthorized("Authentication required");
+    if (!isOwner(req.user)) {
+      throw AppError.forbidden("Only the company account can do this");
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = authenticate;
 module.exports.authenticate = authenticate;
 module.exports.authorizePermission = authorizePermission;
+module.exports.authorizeOwner = authorizeOwner;
 module.exports.rolePermissionInclude = rolePermissionInclude;
 module.exports.userAccessInclude = userAccessInclude;

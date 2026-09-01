@@ -8,7 +8,17 @@ const { marketplaceQuerySchema, tradeReportQuerySchema } = require("./insights.v
 
 router.use(authenticate);
 
-router.get("/dashboard", controller.dashboard);
+router.get(
+  "/dashboard",
+  authorizePermission(
+    "sales:READ",
+    "purchasing:READ",
+    "inventory:READ",
+    "insights:READ",
+    "finance:READ",
+  ),
+  controller.dashboard,
+);
 
 router.get(
   "/marketplace",
@@ -19,7 +29,7 @@ router.get(
 
 router.get(
   "/sales-report",
-  authorizePermission("insights", "READ"),
+  authorizePermission("sales:READ", "insights:READ"),
   validateQuery(tradeReportQuerySchema),
   controller.salesReport,
 );
@@ -35,6 +45,20 @@ router.get(
   authorizePermission("purchasing:READ", "insights:READ"),
   validateQuery(tradeReportQuerySchema),
   controller.purchasesReport,
+);
+
+router.get(
+  "/item-profit-report",
+  authorizePermission("sales:READ", "purchasing:READ", "insights:READ"),
+  validateQuery(tradeReportQuerySchema),
+  controller.itemProfitReport,
+);
+
+router.get(
+  "/vat-report",
+  authorizePermission("sales:READ", "purchasing:READ", "insights:READ"),
+  validateQuery(tradeReportQuerySchema),
+  controller.vatReport,
 );
 
 module.exports = router;

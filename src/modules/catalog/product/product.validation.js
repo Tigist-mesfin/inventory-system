@@ -20,6 +20,17 @@ exports.idParamSchema = Joi.object({
   id: uuid().required(),
 });
 
+exports.historyQuerySchema = Joi.object({
+  from: Joi.date().iso(),
+  to: Joi.date().iso(),
+  supplierId: uuid(),
+  warehouseId: uuid(),
+  customerId: uuid(),
+  createdBy: uuid(),
+  unitCost: money,
+  sellingPrice: money,
+});
+
 exports.createSchema = Joi.object({
   categoryId: uuid().allow("", null),
   supplierId: uuid().allow(null),

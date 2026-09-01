@@ -26,11 +26,11 @@ exports.create = catchAsync(async (req, res) => {
 });
 
 exports.update = catchAsync(async (req, res) => {
-  const supplier = await supplierService.update(req.params.id, req.body);
+  const supplier = await supplierService.update(req.params.id, req.body, req.user);
   sendSuccess(res, { data: { supplier }, message: "Supplier updated" });
 });
 
 exports.remove = catchAsync(async (req, res) => {
-  await supplierService.remove(req.params.id);
+  await supplierService.remove(req.params.id, req.user);
   sendSuccess(res, { data: null, message: "Supplier deleted" });
 });

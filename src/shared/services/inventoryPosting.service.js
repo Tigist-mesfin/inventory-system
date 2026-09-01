@@ -153,6 +153,7 @@ exports.postOutbound = async (
     referenceType,
     referenceId,
     notes,
+    unitCost: unitCostOverride,
   },
   transaction,
 ) => {
@@ -168,7 +169,10 @@ exports.postOutbound = async (
   }
 
   const after = decimal.subQty(before, outbound);
-  const unitCost = decimal.money(inventory.averageCost);
+  const unitCost =
+    unitCostOverride != null
+      ? decimal.money(unitCostOverride)
+      : decimal.money(inventory.averageCost);
 
   await insertLedger(
     {

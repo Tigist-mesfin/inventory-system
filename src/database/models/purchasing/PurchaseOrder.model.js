@@ -165,6 +165,13 @@ module.exports = (sequelize, DataTypes) => {
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });
+
+    PurchaseOrder.hasMany(models.StockBatch, {
+      foreignKey: "purchaseOrderId",
+      as: "stockBatches",
+      onDelete: "SET NULL",
+      onUpdate: "CASCADE",
+    });
   };
 
   return PurchaseOrder;

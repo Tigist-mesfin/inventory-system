@@ -36,7 +36,14 @@ const applyWarehouse = (where, user, field = "warehouseId") => {
   return where;
 };
 
+const applyTenant = (where, user) => {
+  applyCompany(where, user);
+  applyWarehouse(where, user);
+  return where;
+};
+
 const applyTransferWarehouses = (where, user) => {
+  applyCompany(where, user);
   const ids = warehouseIdsOf(user);
   if (!ids) return where;
   const idFilter = ids.length ? { [Op.in]: ids } : null;
@@ -50,16 +57,17 @@ const applyTransferWarehouses = (where, user) => {
 const assertWarehouseAccess = (user, warehouseId) => {
   if (!warehouseId) return;
   const ids = warehouseIdsOf(user);
-  if (!ids) return;
-  if (!ids.includes(warehouseId)) {
-    throw AppError.forbidden("No access to this store");
+  if (ids) {
+    if (!ids.length || !ids.includes(warehouseId)) {
+      throw AppError.forbidden("No access to this store");
+    }
   }
 };
 
 const assertOwned = (user, record, message = "Not found") => {
   if (!record) throw AppError.notFound(message);
   const companyId = companyIdOf(user);
-  if (!companyId || record.companyId !== companyId) {
+  if (!companyId || !record.companyId || record.companyId !== companyId) {
     throw AppError.notFound(message);
   }
   return record;
@@ -92,6 +100,7 @@ module.exports = {
   warehouseIdsOf,
   applyCompany,
   applyWarehouse,
+  applyTenant,
   applyTransferWarehouses,
   assertWarehouseAccess,
   assertOwned,

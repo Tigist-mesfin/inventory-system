@@ -26,17 +26,17 @@ exports.create = catchAsync(async (req, res) => {
 });
 
 exports.update = catchAsync(async (req, res) => {
-  const customer = await customerService.update(req.params.id, req.body);
+  const customer = await customerService.update(req.params.id, req.body, req.user);
   sendSuccess(res, { data: { customer }, message: "Customer updated" });
 });
 
 exports.remove = catchAsync(async (req, res) => {
-  await customerService.remove(req.params.id);
+  await customerService.remove(req.params.id, req.user);
   sendSuccess(res, { data: null, message: "Customer deleted" });
 });
 
 exports.setPrices = catchAsync(async (req, res) => {
-  const prices = await customerService.setPrices(req.params.id, req.body.prices);
+  const prices = await customerService.setPrices(req.params.id, req.body.prices, req.user);
   sendSuccess(res, { data: { prices }, message: "Customer prices saved" });
 });
 
@@ -49,6 +49,36 @@ exports.recordPayment = catchAsync(async (req, res) => {
   sendSuccess(res, {
     data: { payment },
     message: "Payment recorded",
+    statusCode: 201,
+  });
+});
+
+exports.listWallets = catchAsync(async (req, res) => {
+  const result = await customerService.listWallets(req.user);
+  sendSuccess(res, {
+    data: { customers: result.customers },
+    message: "Customer wallets retrieved",
+  });
+});
+
+exports.listWalletTransactions = catchAsync(async (req, res) => {
+  const result = await customerService.listWalletTransactions(req.query, req.user);
+  sendSuccess(res, {
+    data: { transactions: result.transactions },
+    meta: result.meta,
+    message: "Wallet history retrieved",
+  });
+});
+
+exports.rechargeWallet = catchAsync(async (req, res) => {
+  const result = await customerService.rechargeWallet(
+    req.params.id,
+    req.body,
+    req.user,
+  );
+  sendSuccess(res, {
+    data: result,
+    message: "Wallet recharged",
     statusCode: 201,
   });
 });

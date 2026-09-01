@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, money, qty } from "../../api/client";
+import InventoryLoading from "../../components/InventoryLoading";
+
+const dateText = (value) => {
+  if (!value) return "—";
+  return String(value).slice(0, 10);
+};
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -13,113 +19,149 @@ export default function DashboardPage() {
   }, []);
 
   if (error) return <p className="error">{error}</p>;
-  if (!data) return <p className="muted">Loading the floor…</p>;
+  if (!data) return <InventoryLoading message="Loading inventory..." />;
+
+  const purchases = data.purchases || { today: { count: 0, total: 0 }, week: { count: 0, total: 0 } };
+  const profit = data.grossProfit || { today: 0, week: 0 };
+  const stores = data.stockByWarehouse || [];
 
   return (
     <>
       <div className="topbar">
         <div>
-          <div className="pill">Live wholesale desk</div>
-          <h1 style={{ margin: "8px 0 4px" }}>Today’s floor</h1>
-          <p className="muted">Sales, stock-outs, debts, and slow movers in one glance.</p>
+          <div className="pill">Company dashboard</div>
+          <h1 style={{ margin: "8px 0 4px" }}>Stock, purchases, and profit</h1>
+          <p className="muted">Your company’s live totals for today and this week.</p>
         </div>
         <div className="row-actions">
-          <Link className="btn saffron" to="/sell/new">
-            New structured order
+          <Link className="btn saffron" to="/buy">
+            New purchase
           </Link>
-          <Link className="btn secondary" to="/ai">
-            AI desk
+          <Link className="btn secondary" to="/stock">
+            Live stock
+          </Link>
+          <Link className="btn secondary" to="/income-statement">
+            Income statement
           </Link>
         </div>
       </div>
 
-      <section className="grid stats">
+      <section className="stock-stats">
         <article className="card stat-card">
-          <span className="muted">Today</span>
-          <b>{money(data.sales.today.total)}</b>
-          <small>{data.sales.today.count} invoices</small>
+          <span className="muted">Total stock</span>
+          <b>{qty(data.totalStock)}</b>
+          <small>
+            {data.warehouseCount === 1
+              ? "1 warehouse"
+              : `${data.warehouseCount || 0} warehouses`}
+          </small>
+        </article>
+        {stores.map((store) => (
+          <article key={store.warehouseId} className="card stat-card">
+            <span className="muted">{store.name}</span>
+            <b>{qty(store.quantity)}</b>
+            <small>
+              {store.itemCount === 1 ? "1 item in store" : `${store.itemCount} items in store`}
+            </small>
+          </article>
+        ))}
+      </section>
+
+      <section className="grid stats" style={{ marginTop: 4 }}>
+        <article className="card stat-card">
+          <span className="muted">Today total purchase</span>
+          <b>{money(purchases.today.total)}</b>
+          <small>
+            {purchases.today.count === 1
+              ? "1 purchase"
+              : `${purchases.today.count} purchases`}
+          </small>
         </article>
         <article className="card stat-card">
-          <span className="muted">This week</span>
-          <b>{money(data.sales.week.total)}</b>
-          <small>{data.sales.week.count} invoices</small>
+          <span className="muted">This week total purchase</span>
+          <b>{money(purchases.week.total)}</b>
+          <small>
+            {purchases.week.count === 1
+              ? "1 purchase"
+              : `${purchases.week.count} purchases`}
+          </small>
         </article>
         <article className="card stat-card">
-          <span className="muted">Customer credit</span>
-          <b>{money(data.creditOutstanding)}</b>
-          <small>{data.overdueCreditCount} overdue</small>
+          <span className="muted">Total low stock items</span>
+          <b>{qty(data.lowStockCount || 0)}</b>
+          <small>At or below reorder level</small>
+        </article>
+        <article className="card stat-card danger">
+          <span>Out-of-stock items</span>
+          <b>{qty(data.outOfStockCount || 0)}</b>
+          <small>Zero quantity in a store</small>
         </article>
         <article className="card stat-card">
-          <span className="muted">Supplier payables</span>
-          <b>{money(data.supplierPayables)}</b>
-          <small>Money you still owe</small>
+          <span className="muted">Recently added items</span>
+          <b>{qty(data.recentlyAddedCount || 0)}</b>
+          <small>New catalog items this week</small>
         </article>
         <article className="card stat-card">
-          <span className="muted">Profit view</span>
-          <b><Link to="/income-statement">Income statement</Link></b>
-          <small>Sales, costs, and expenses</small>
+          <span className="muted">Gross profit today</span>
+          <b>{money(profit.today)}</b>
+          <small>Sales minus cost of goods</small>
+        </article>
+        <article className="card stat-card">
+          <span className="muted">Gross profit this week</span>
+          <b>{money(profit.week)}</b>
+          <small>Sales minus cost of goods</small>
         </article>
       </section>
 
       <section className="grid split" style={{ marginTop: 16 }}>
         <article className="card">
-          <h3>Best sellers</h3>
-          {data.bestSellers.length === 0 ? (
-            <p className="empty muted">Complete a sale to see velocity.</p>
+          <h3>Recently added items</h3>
+          {(data.recentlyAdded || []).length === 0 ? (
+            <p className="empty muted">No new items this week.</p>
           ) : (
-            data.bestSellers.map((row) => (
-              <div key={row.product?.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+            data.recentlyAdded.map((row) => (
+              <div
+                key={row.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "8px 0",
+                  borderBottom: "1px solid var(--line)",
+                }}
+              >
                 <div>
-                  <strong>{row.product?.name}</strong>
+                  <strong>{row.name}</strong>
                   <div className="muted">
-                    {[row.product?.brand, row.product?.size, row.product?.color].filter(Boolean).join(" · ")}
+                    {[row.sku, row.brand].filter(Boolean).join(" · ")}
                   </div>
                 </div>
-                <strong>{qty(row.soldQuantity)}</strong>
+                <span className="muted">{dateText(row.createdAt)}</span>
               </div>
             ))
           )}
         </article>
         <article className="card">
-          <h3>Stock-outs & lows</h3>
-          {data.lowStock.length === 0 ? (
-            <p className="empty muted">No SKUs at reorder level.</p>
+          <h3>Recent purchases this week</h3>
+          {(data.recentPurchases || []).length === 0 ? (
+            <p className="empty muted">No purchases recorded this week.</p>
           ) : (
-            data.lowStock.map((row) => (
-              <div key={row.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
-                <strong>{row.product?.name}</strong>
-                <div className="muted">
-                  {row.warehouse?.name} · {qty(row.available)} left
+            data.recentPurchases.map((row) => (
+              <div
+                key={row.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "8px 0",
+                  borderBottom: "1px solid var(--line)",
+                }}
+              >
+                <div>
+                  <strong>{row.orderNumber}</strong>
+                  <div className="muted">
+                    {[row.supplier?.name, dateText(row.orderDate)].filter(Boolean).join(" · ")}
+                  </div>
                 </div>
-              </div>
-            ))
-          )}
-        </article>
-      </section>
-
-      <section className="grid split" style={{ marginTop: 16 }}>
-        <article className="card">
-          <h3>Dead stock</h3>
-          {data.deadStock.length === 0 ? (
-            <p className="empty muted">No slow movers in the last 90 days.</p>
-          ) : (
-            data.deadStock.map((row) => (
-              <div key={row.id} style={{ padding: "8px 0" }}>
-                <strong>{row.product?.name}</strong>
-                <div className="muted">{row.recommendation}</div>
-              </div>
-            ))
-          )}
-        </article>
-        <article className="card">
-          <h3>Follow up</h3>
-          {data.followUpCustomers.length === 0 ? (
-            <p className="empty muted">Customers are buying regularly.</p>
-          ) : (
-            data.followUpCustomers.map((row) => (
-              <div key={row.id} style={{ padding: "8px 0" }}>
-                <strong>{row.name}</strong>
-                <div className="muted">{row.phone} · {row.lastPurchaseAt ? "quiet lately" : "never purchased"}</div>
+                <strong>{money(row.totalAmount)}</strong>
               </div>
             ))
           )}

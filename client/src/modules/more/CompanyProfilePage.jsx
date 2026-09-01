@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
+import InventoryLoading from "../../components/InventoryLoading";
 
 const empty = { name: "", address: "", phone: "", email: "", tin: "" };
 
@@ -7,12 +8,16 @@ export default function CompanyProfilePage() {
   const [form, setForm] = useState(empty);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     api("/api/company-profile")
       .then((res) => setForm({ ...empty, ...res.data.company }))
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(err.message))
+      .finally(() => setReady(true));
   }, []);
+
+  if (!ready) return <InventoryLoading message="Loading inventory..." />;
 
   return (
     <form

@@ -4,11 +4,15 @@ const { Op } = require("sequelize");
 const AppError = require("../../shared/errors/AppError");
 const paginate = require("../../shared/helpers/pagination.helper");
 const decimal = require("../../shared/helpers/decimal.helper");
+const vat = require("../../shared/helpers/vat.helper");
 const { nextDocumentNumber } = require("../../shared/helpers/documentNumber.helper");
 const inventoryPosting = require("../../shared/services/inventoryPosting.service");
 const models = require("../../database/models");
 const purchaseOrderRepository = require("./purchase-order.repository");
 const tenant = require("../../shared/helpers/tenant.helper");
+const stockBatchService = require("../inventory/stock-batch.service");
+const excel = require("../../shared/helpers/excel.helper");
+const productService = require("../catalog/product/product.service");
 
 const {
   Product,
@@ -19,6 +23,7 @@ const {
   StockReceiptItem,
   Warehouse,
   SupplierPayment,
+  PaymentMethod,
 } = models;
 
 const emptyToNull = (value) => {
@@ -65,13 +70,13 @@ const resolveSupplier = async (payload, user) => {
   return { supplierId: supplier.id, walkInNote: `Walk-in: ${walkInName}` };
 };
 
-const buildLines = async (items) => {
+const buildLines = async (items, user) => {
   uniqueProducts(items);
   const lines = [];
   let subtotal = decimal.money(0);
   for (const item of items) {
     const product = await Product.findByPk(item.productId);
-    if (!product) throw AppError.badRequest("Product not found");
+    tenant.assertOwned(user, product, "Product not found");
     const quantity = decimal.qty(item.quantity);
     const unitPrice = decimal.money(item.unitPrice);
     const totalPrice = decimal.lineTotal(quantity, unitPrice, 0);
@@ -81,15 +86,7 @@ const buildLines = async (items) => {
   return { lines, subtotal };
 };
 
-const headerTotals = (subtotal, taxAmount, discountAmount) => {
-  const tax = decimal.money(taxAmount || 0);
-  const discount = decimal.money(discountAmount || 0);
-  const total = decimal.subMoney(decimal.addMoney(subtotal, tax), discount);
-  if (decimal.cmpMoney(total, 0) < 0) {
-    throw AppError.badRequest("Purchase order total cannot be negative");
-  }
-  return { taxAmount: tax, discountAmount: discount, totalAmount: total };
-};
+const headerTotals = (subtotal, discountAmount) => vat.apply(subtotal, discountAmount);
 
 const assertDraftEditable = (po) => {
   if (!["DRAFT", "SUBMITTED", "APPROVED"].includes(po.status)) {
@@ -132,8 +129,8 @@ exports.getById = async (id, user) => {
 exports.create = async (payload, user) => {
   const userId = user.id;
   const { supplierId, walkInNote } = await resolveSupplier(payload, user);
-  const { lines, subtotal } = await buildLines(payload.items);
-  const totals = headerTotals(subtotal, payload.taxAmount, payload.discountAmount);
+  const { lines, subtotal } = await buildLines(payload.items, user);
+  const totals = headerTotals(subtotal, payload.discountAmount);
   const notes = [walkInNote, emptyToNull(payload.notes)].filter(Boolean).join(" — ") || null;
 
   return sequelize.transaction(async (transaction) => {
@@ -187,22 +184,21 @@ exports.create = async (payload, user) => {
   });
 };
 
-exports.update = async (id, payload) => {
+exports.update = async (id, payload, user) => {
   const po = await purchaseOrderRepository.findById(id);
-  if (!po) throw AppError.notFound("Purchase order not found");
+  tenant.assertOwned(user, po, "Purchase order not found");
   assertDraftEditable(po);
 
-  if (payload.supplierId) await assertSupplier(payload.supplierId);
+  if (payload.supplierId) await assertSupplier(payload.supplierId, user);
   let lines = null;
   let subtotal = decimal.money(po.subtotal);
   if (payload.items) {
-    const built = await buildLines(payload.items);
+    const built = await buildLines(payload.items, user);
     lines = built.lines;
     subtotal = built.subtotal;
   }
   const totals = headerTotals(
     subtotal,
-    payload.taxAmount !== undefined ? payload.taxAmount : po.taxAmount,
     payload.discountAmount !== undefined ? payload.discountAmount : po.discountAmount,
   );
 
@@ -225,9 +221,9 @@ exports.update = async (id, payload) => {
   });
 };
 
-exports.cancel = async (id) => {
+exports.cancel = async (id, user) => {
   const po = await purchaseOrderRepository.findById(id);
-  if (!po) throw AppError.notFound("Purchase order not found");
+  tenant.assertOwned(user, po, "Purchase order not found");
   if (!["DRAFT", "SUBMITTED", "APPROVED"].includes(po.status)) {
     throw AppError.badRequest("This purchase order cannot be cancelled");
   }
@@ -248,9 +244,9 @@ const assertOwner = (user) => {
   }
 };
 
-const assertWarehouse = async (warehouseId, transaction) => {
+const assertWarehouse = async (warehouseId, user, transaction) => {
   const warehouse = await Warehouse.findByPk(warehouseId, { transaction });
-  if (!warehouse) throw AppError.badRequest("Warehouse not found");
+  tenant.assertOwned(user, warehouse, "Warehouse not found");
   if (warehouse.status !== "ACTIVE") {
     throw AppError.badRequest("Cannot deliver into an inactive warehouse");
   }
@@ -260,7 +256,7 @@ const assertWarehouse = async (warehouseId, transaction) => {
 const lockKey = (productId, warehouseId) => `${productId}|${warehouseId}`;
 
 const removeFromWarehouse = async (
-  { productId, warehouseId, quantity, userId, notes },
+  { productId, warehouseId, quantity, userId, notes, purchaseOrderItemId },
   transaction,
 ) => {
   if (decimal.cmpQty(quantity, 0) <= 0) return;
@@ -268,9 +264,16 @@ const removeFromWarehouse = async (
     [{ productId, warehouseId }],
     transaction,
   );
+  const inventory = locked[lockKey(productId, warehouseId)];
+  if (purchaseOrderItemId) {
+    await stockBatchService.releasePurchaseBatches(
+      { purchaseOrderItemId, warehouseId, quantity },
+      transaction,
+    );
+  }
   await inventoryPosting.postOutbound(
     {
-      inventory: locked[lockKey(productId, warehouseId)],
+      inventory,
       quantity,
       type: "ADJUSTMENT_OUT",
       createdBy: userId,
@@ -280,6 +283,7 @@ const removeFromWarehouse = async (
     },
     transaction,
   );
+  await stockBatchService.refreshAverageCost(inventory, transaction);
 };
 
 const postReceiptIntoWarehouse = async (
@@ -300,8 +304,19 @@ const postReceiptIntoWarehouse = async (
     { transaction },
   );
 
+  let postedCount = 0;
   for (const item of items) {
-    const quantity = decimal.qty(item.quantity);
+    const requestedDeliver = item.deliverQuantity;
+    delete item.deliverQuantity;
+    const leftover = decimal.subQty(item.quantity, item.receivedQuantity || 0);
+    const quantity = decimal.qty(
+      requestedDeliver != null ? requestedDeliver : leftover,
+    );
+    if (decimal.cmpQty(quantity, 0) <= 0) continue;
+    if (decimal.cmpQty(quantity, leftover) > 0) {
+      throw AppError.badRequest("Cannot over-receive a purchase order line");
+    }
+
     await StockReceiptItem.create(
       {
         stockReceiptId: receipt.id,
@@ -318,9 +333,17 @@ const postReceiptIntoWarehouse = async (
       throw AppError.badRequest("Cannot over-receive a purchase order line");
     }
     item.receivedQuantity = nextReceived;
-    item.deliveryStatus = "DELIVERED";
     item.warehouseId = warehouseId;
-    await item.save({ transaction });
+    item.deliveryStatus =
+      decimal.cmpQty(nextReceived, item.quantity) >= 0
+        ? "DELIVERED"
+        : item.deliveryStatus === "ON_LOADING"
+          ? "ON_LOADING"
+          : "NOT_DELIVERED";
+    await item.save({
+      transaction,
+      fields: ["receivedQuantity", "warehouseId", "deliveryStatus"],
+    });
 
     const inventory =
       lockedInventories[lockKey(item.productId, warehouseId)];
@@ -337,6 +360,27 @@ const postReceiptIntoWarehouse = async (
       },
       transaction,
     );
+    const po = await PurchaseOrder.findByPk(purchaseOrderId, { transaction });
+    await stockBatchService.createPurchaseBatch(
+      {
+        companyId: inventory.companyId || po?.companyId,
+        productId: item.productId,
+        warehouseId,
+        purchaseOrderId,
+        purchaseOrderItemId: item.id,
+        purchaseDate: po?.orderDate || receipt.receiptDate || new Date(),
+        unitCost: item.unitPrice,
+        quantity,
+      },
+      transaction,
+    );
+    await stockBatchService.refreshAverageCost(inventory, transaction);
+    postedCount += 1;
+  }
+
+  if (postedCount === 0) {
+    await receipt.destroy({ transaction });
+    return;
   }
 
   receipt.status = "COMPLETED";
@@ -355,7 +399,7 @@ const recalcPurchaseOrder = async (purchaseOrderId, transaction) => {
   for (const item of po.items || []) {
     subtotal = decimal.addMoney(subtotal, item.totalPrice);
   }
-  const totals = headerTotals(subtotal, po.taxAmount, po.discountAmount);
+  const totals = headerTotals(subtotal, po.discountAmount);
   po.subtotal = subtotal;
   po.taxAmount = totals.taxAmount;
   po.discountAmount = totals.discountAmount;
@@ -381,9 +425,10 @@ const recalcPurchaseOrder = async (purchaseOrderId, transaction) => {
 const applyItemDelivery = async (
   item,
   { deliveryStatus, warehouseId, quantity },
-  userId,
+  user,
   transaction,
 ) => {
+  const userId = user.id;
   const nextQty =
     quantity !== undefined ? decimal.qty(quantity) : decimal.qty(item.quantity);
   const nextStatus = deliveryStatus || item.deliveryStatus || "NOT_DELIVERED";
@@ -401,7 +446,7 @@ const applyItemDelivery = async (
         ? warehouseId || null
         : item.warehouseId;
 
-  if (nextWarehouseId) await assertWarehouse(nextWarehouseId, transaction);
+  if (nextWarehouseId) await assertWarehouse(nextWarehouseId, user, transaction);
 
   const sameStock =
     wasDelivered &&
@@ -417,6 +462,7 @@ const applyItemDelivery = async (
         quantity: oldReceived,
         userId,
         notes: `Reverse delivery ${item.id}`,
+        purchaseOrderItemId: item.id,
       },
       transaction,
     );
@@ -439,7 +485,6 @@ const applyItemDelivery = async (
       [{ productId: item.productId, warehouseId: nextWarehouseId }],
       transaction,
     );
-    item.receivedQuantity = 0;
     await item.save({ transaction });
     await postReceiptIntoWarehouse(
       {
@@ -462,6 +507,167 @@ exports.undeliveredSummary = async (user) => {
   return purchaseOrderRepository.deliverySummary(poWhere);
 };
 
+exports.listUndeliveredItems = async (user) => {
+  const poWhere = { status: { [Op.ne]: "CANCELLED" } };
+  tenant.applyCompany(poWhere, user);
+  return purchaseOrderRepository.listUndeliveredItems(poWhere);
+};
+
+const leftoverOf = (item) =>
+  decimal.subQty(item.quantity, item.receivedQuantity || 0);
+
+exports.lockPendingItemsForProduct = async (productId, user, transaction) => {
+  const pending = await PurchaseOrderItem.findAll({
+    attributes: ["id"],
+    where: {
+      productId,
+      deliveryStatus: { [Op.ne]: "DELIVERED" },
+    },
+    include: [
+      {
+        model: PurchaseOrder,
+        as: "purchaseOrder",
+        attributes: [],
+        where: {
+          status: { [Op.ne]: "CANCELLED" },
+          companyId: tenant.requireCompanyId(user),
+        },
+        required: true,
+      },
+    ],
+    transaction,
+  });
+  const ids = pending.map((row) => row.id).sort();
+  if (!ids.length) return [];
+  return PurchaseOrderItem.findAll({
+    where: { id: ids },
+    order: [["id", "ASC"]],
+    lock: transaction.LOCK.UPDATE,
+    transaction,
+  });
+};
+
+exports.deliverQuantityFromPurchases = async (
+  { productId, warehouseId, quantity },
+  user,
+  outerTransaction,
+) => {
+  const need = decimal.qty(quantity);
+  if (decimal.cmpQty(need, 0) <= 0) {
+    return { delivered: decimal.qty(0) };
+  }
+
+  await assertWarehouse(warehouseId, user, outerTransaction);
+  tenant.assertWarehouseAccess(user, warehouseId);
+
+  const product = await Product.findByPk(productId, {
+    transaction: outerTransaction,
+  });
+  tenant.assertOwned(user, product, "Product not found");
+
+  const run = async (transaction) => {
+    const pending = await PurchaseOrderItem.findAll({
+      where: {
+        productId,
+        deliveryStatus: { [Op.ne]: "DELIVERED" },
+      },
+      include: [
+        {
+          model: PurchaseOrder,
+          as: "purchaseOrder",
+          attributes: ["id", "orderDate", "companyId", "status"],
+          where: {
+            status: { [Op.ne]: "CANCELLED" },
+            companyId: tenant.requireCompanyId(user),
+          },
+          required: true,
+        },
+      ],
+      order: [
+        [{ model: PurchaseOrder, as: "purchaseOrder" }, "orderDate", "ASC"],
+        ["id", "ASC"],
+      ],
+      transaction,
+    });
+
+    const available = pending.reduce(
+      (sum, item) => decimal.addQty(sum, leftoverOf(item)),
+      decimal.qty(0),
+    );
+    if (decimal.cmpQty(need, available) > 0) {
+      throw AppError.badRequest(
+        `Only ${available} undelivered ${product.unit || "units"} remain for this item`,
+      );
+    }
+
+    const ids = pending.map((row) => row.id).sort();
+    if (!ids.length) {
+      throw AppError.badRequest(
+        `Only ${available} undelivered ${product.unit || "units"} remain for this item`,
+      );
+    }
+
+    const lockedItems = await PurchaseOrderItem.findAll({
+      where: { id: ids },
+      order: [["id", "ASC"]],
+      lock: transaction.LOCK.UPDATE,
+      transaction,
+    });
+    const lockedMap = new Map(lockedItems.map((row) => [row.id, row]));
+    const ordered = pending
+      .map((row) => lockedMap.get(row.id))
+      .filter(Boolean);
+
+    const lockedInventories = await inventoryPosting.lockInventories(
+      [{ productId, warehouseId }],
+      transaction,
+    );
+
+    let remainingNeed = need;
+    const byPo = new Map();
+    for (const item of ordered) {
+      if (decimal.cmpQty(remainingNeed, 0) <= 0) break;
+      const leftover = leftoverOf(item);
+      if (decimal.cmpQty(leftover, 0) <= 0) continue;
+      const take =
+        decimal.cmpQty(leftover, remainingNeed) <= 0 ? leftover : remainingNeed;
+      item.deliverQuantity = take;
+      const list = byPo.get(item.purchaseOrderId) || [];
+      list.push(item);
+      byPo.set(item.purchaseOrderId, list);
+      remainingNeed = decimal.subQty(remainingNeed, take);
+    }
+
+    if (decimal.cmpQty(remainingNeed, 0) > 0) {
+      throw AppError.badRequest(
+        `Only ${decimal.subQty(need, remainingNeed)} undelivered ${product.unit || "units"} could be delivered`,
+      );
+    }
+
+    for (const [purchaseOrderId, group] of byPo.entries()) {
+      await postReceiptIntoWarehouse(
+        {
+          warehouseId,
+          purchaseOrderId,
+          items: group,
+          userId: user.id,
+          lockedInventories,
+        },
+        transaction,
+      );
+    }
+
+    for (const purchaseOrderId of byPo.keys()) {
+      await recalcPurchaseOrder(purchaseOrderId, transaction);
+    }
+
+    return { delivered: need };
+  };
+
+  if (outerTransaction) return run(outerTransaction);
+  return sequelize.transaction(run);
+};
+
 exports.updateItemDelivery = async (itemId, payload, user) => {
   assertOwner(user);
   const existing = await purchaseOrderRepository.findItemById(itemId);
@@ -476,7 +682,7 @@ exports.updateItemDelivery = async (itemId, payload, user) => {
       lock: transaction.LOCK.UPDATE,
       transaction,
     });
-    await applyItemDelivery(item, payload, user.id, transaction);
+    await applyItemDelivery(item, payload, user, transaction);
     await recalcPurchaseOrder(item.purchaseOrderId, transaction);
     const po = await purchaseOrderRepository.findById(item.purchaseOrderId, transaction);
     const publicPo = purchaseOrderRepository.toPublic(po);
@@ -489,7 +695,7 @@ exports.updateItemDelivery = async (itemId, payload, user) => {
 
 exports.deliverAll = async ({ warehouseId }, user) => {
   assertOwner(user);
-  await assertWarehouse(warehouseId);
+  await assertWarehouse(warehouseId, user);
 
   return sequelize.transaction(async (transaction) => {
     const pending = await PurchaseOrderItem.findAll({
@@ -500,7 +706,10 @@ exports.deliverAll = async ({ warehouseId }, user) => {
           model: PurchaseOrder,
           as: "purchaseOrder",
           attributes: [],
-          where: { status: { [Op.ne]: "CANCELLED" } },
+          where: {
+            status: { [Op.ne]: "CANCELLED" },
+            companyId: tenant.requireCompanyId(user),
+          },
           required: true,
         },
       ],
@@ -533,9 +742,6 @@ exports.deliverAll = async ({ warehouseId }, user) => {
     }
 
     for (const [purchaseOrderId, group] of byPo.entries()) {
-      for (const item of group) {
-        item.receivedQuantity = 0;
-      }
       await postReceiptIntoWarehouse(
         {
           warehouseId,
@@ -579,4 +785,208 @@ exports.recordPayment = async (id, payload, user) => {
     user,
   );
   return exports.getById(id, user);
+};
+
+const parseImportNumber = (value) => {
+  const text = String(value || "").replace(/,/g, "").trim();
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+};
+
+const parseImportDate = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return new Date();
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return new Date(text);
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const serial = Number(text);
+    if (serial > 20000 && serial < 80000) {
+      return new Date(Math.round((serial - 25569) * 86400 * 1000));
+    }
+  }
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+const parseImportStatus = (value) => {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return "NOT_DELIVERED";
+  if (text.includes("load")) return "ON_LOADING";
+  if (text.includes("deliver") && !text.includes("not")) return "DELIVERED";
+  return "NOT_DELIVERED";
+};
+
+const matchPaymentMethod = (value, methods) => {
+  const needle = String(value || "").trim().toLowerCase();
+  if (!needle) return null;
+  return (
+    methods.find((row) => row.name.toLowerCase() === needle)?.name ||
+    methods.find((row) => row.name.toLowerCase().includes(needle))?.name ||
+    null
+  );
+};
+
+const findImportSupplier = async (name, user) => {
+  const text = String(name || "").trim();
+  if (!text) return null;
+  const where = { status: "ACTIVE", name: text };
+  tenant.applyCompany(where, user);
+  const supplier = await Supplier.findOne({ where });
+  if (!supplier || supplier.name === "Walk-in") return null;
+  return supplier;
+};
+
+const resolveImportProduct = async (name, unit, unitPrice, user, cache) => {
+  const key = String(name).trim().toLowerCase();
+  if (cache.has(key)) return cache.get(key);
+  const where = { name: String(name).trim() };
+  tenant.applyCompany(where, user);
+  const existing = await Product.findOne({ where });
+  if (existing) {
+    if (existing.status !== "ACTIVE") {
+      throw AppError.badRequest(`${name} is inactive`);
+    }
+    cache.set(key, existing);
+    return existing;
+  }
+  const created = await productService.create(
+    {
+      name: String(name).trim(),
+      unit: unit || "PCS",
+      purchasePrice: unitPrice || 0,
+      sellingPrice: 0,
+    },
+    user,
+  );
+  cache.set(key, created);
+  return created;
+};
+
+exports.buildImportTemplate = () => excel.buildPurchaseTemplateBuffer();
+
+exports.importFromExcel = async (buffer, user) => {
+  if (!buffer || !buffer.length) {
+    throw AppError.badRequest("Upload an Excel file");
+  }
+  let rows;
+  try {
+    rows = excel.parsePurchaseRows(buffer);
+  } catch (err) {
+    throw AppError.badRequest("Could not read that Excel file");
+  }
+  if (!rows.length) {
+    throw AppError.badRequest("The Excel file has no purchase rows");
+  }
+  if (rows.length > 300) {
+    throw AppError.badRequest("Import at most 300 rows at a time");
+  }
+
+  const methods = await PaymentMethod.findAll({
+    where: tenant.applyCompany({ status: "ACTIVE" }, user),
+    order: [["name", "ASC"]],
+  });
+  const defaultMethod = methods[0]?.name || "Cash";
+  const warehouses = await Warehouse.findAll({
+    where: tenant.applyCompany({ status: "ACTIVE" }, user),
+    order: [["name", "ASC"]],
+  });
+  const defaultWarehouseId = warehouses[0]?.id || null;
+  const productCache = new Map();
+  const imported = [];
+  const skipped = [];
+
+  for (const row of rows) {
+    try {
+      const itemName = String(row.itemName || "").trim();
+      if (!itemName) {
+        skipped.push({ rowNumber: row.rowNumber, reason: "No item name" });
+        continue;
+      }
+
+      let quantity = parseImportNumber(row.quantity);
+      if (quantity === null || quantity <= 0) quantity = 1;
+      let unitPrice = parseImportNumber(row.unitPrice);
+      const amount = parseImportNumber(row.amount);
+      const costWithVat = parseImportNumber(row.costWithVat);
+      if (unitPrice === null || unitPrice < 0) unitPrice = 0;
+      if (unitPrice === 0 && amount && amount > 0) {
+        unitPrice = Number((amount / quantity).toFixed(2));
+      } else if (unitPrice === 0 && costWithVat && costWithVat > 0) {
+        unitPrice = Number((costWithVat / 1.15 / quantity).toFixed(2));
+      }
+
+      const product = await resolveImportProduct(
+        itemName,
+        String(row.unit || "").trim(),
+        unitPrice,
+        user,
+        productCache,
+      );
+      const supplier = await findImportSupplier(row.boughtFrom, user);
+      const walkInName = String(row.boughtFrom || "").trim() || "Imported";
+      const paymentMethod = matchPaymentMethod(row.method, methods) || defaultMethod;
+      const line = decimal.lineTotal(quantity, unitPrice, 0);
+      const totals = vat.apply(line, 0);
+      let paid = parseImportNumber(row.paid);
+      if (paid === null || paid < 0) paid = 0;
+      if (decimal.cmpMoney(paid, totals.totalAmount) > 0) {
+        paid = Number(totals.totalAmount);
+      }
+      const notes = [
+        "Imported from Excel",
+        row.staff ? `Staff: ${row.staff}` : null,
+      ]
+        .filter(Boolean)
+        .join(" — ");
+
+      const purchaseOrder = await exports.create(
+        {
+          ...(supplier ? { supplierId: supplier.id } : { walkInName }),
+          paymentMethod,
+          paidAmount: paid,
+          orderDate: parseImportDate(row.date),
+          notes,
+          items: [{ productId: product.id, quantity, unitPrice }],
+        },
+        user,
+      );
+
+      const status = parseImportStatus(row.status);
+      if (tenant.isOwner(user) && status !== "NOT_DELIVERED" && purchaseOrder.items?.[0]?.id) {
+        if (status === "DELIVERED" && !defaultWarehouseId) {
+          skipped.push({
+            rowNumber: row.rowNumber,
+            reason: "Saved, but no warehouse to mark delivered",
+          });
+        } else {
+          await exports.updateItemDelivery(
+            purchaseOrder.items[0].id,
+            {
+              deliveryStatus: status,
+              warehouseId: status === "DELIVERED" ? defaultWarehouseId : null,
+            },
+            user,
+          );
+        }
+      }
+
+      imported.push({
+        rowNumber: row.rowNumber,
+        orderNumber: purchaseOrder.orderNumber,
+        itemName,
+      });
+    } catch (err) {
+      skipped.push({
+        rowNumber: row.rowNumber,
+        reason: err.statusCode && err.message ? err.message : "Could not import this row",
+      });
+    }
+  }
+
+  return {
+    importedCount: imported.length,
+    skippedCount: skipped.length,
+    imported,
+    skipped,
+  };
 };

@@ -27,7 +27,8 @@ exports.filtersQuerySchema = Joi.object({
 });
 
 exports.chatSchema = Joi.object({
-  question: Joi.string().trim().min(2).max(500).required(),
+  question: Joi.string().trim().min(2).max(800).required(),
+  mode: Joi.string().valid("sql", "tools").default("sql"),
   filters: Joi.object({
     period: Joi.string().valid(...PERIODS),
     from: Joi.date().iso(),
@@ -37,4 +38,8 @@ exports.chatSchema = Joi.object({
     productId: uuid(),
     search: Joi.string().trim().max(64).allow(""),
   }).unknown(false),
+});
+
+exports.clarifySchema = Joi.object({
+  rawQuery: Joi.string().trim().min(2).max(800).required(),
 });

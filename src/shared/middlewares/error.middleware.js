@@ -1,6 +1,10 @@
 const AppError = require("../errors/AppError");
 
 module.exports = (err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
   if (err instanceof AppError) {
     const error = { code: err.errorCode, message: err.message };
     if (err.details !== undefined) error.details = err.details;

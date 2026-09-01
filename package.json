@@ -17,10 +17,15 @@
     "seed": "node src/database/seeders/runSeed.js",
     "zip": "NAME=$(node -p \"require('./package.json').name\") && VERSION=$(node -p \"require('./package.json').version\") && zip -r \"${NAME}-v${VERSION}.zip\" . -x \"node_modules/*\" \"uploads/*\" \"doc/*\" \"docs/*\" \".*\" \"z/*\" \"*.zip\""
   },
-  "keywords": ["inventory", "express", "sequelize"],
+  "keywords": [
+    "inventory",
+    "express",
+    "sequelize"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -36,7 +41,8 @@
     "multer": "^2.2.0",
     "mysql2": "^3.23.3",
     "nodemailer": "^9.0.5",
-    "sequelize": "^6.37.8"
+    "sequelize": "^6.37.8",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.14",

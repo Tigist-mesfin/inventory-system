@@ -38,6 +38,12 @@ module.exports = (sequelize, DataTypes) => {
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });
+    Company.hasMany(models.OtherIncome, {
+      foreignKey: "companyId",
+      as: "otherIncomes",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
   };
 
   return Company;

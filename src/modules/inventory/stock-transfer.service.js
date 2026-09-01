@@ -7,6 +7,7 @@ const inventoryPosting = require("../../shared/services/inventoryPosting.service
 const models = require("../../database/models");
 const stockTransferRepository = require("./stock-transfer.repository");
 const tenant = require("../../shared/helpers/tenant.helper");
+const stockBatchService = require("./stock-batch.service");
 
 const { Product, Warehouse } = models;
 
@@ -16,7 +17,7 @@ const emptyToNull = (value) => {
   return value;
 };
 
-const assertWarehouses = async (sourceId, destId) => {
+const assertWarehouses = async (sourceId, destId, user) => {
   if (sourceId === destId) {
     throw AppError.badRequest("Source and destination warehouses must differ");
   }
@@ -24,13 +25,14 @@ const assertWarehouses = async (sourceId, destId) => {
     Warehouse.findByPk(sourceId),
     Warehouse.findByPk(destId),
   ]);
-  if (!source || !dest) throw AppError.badRequest("Warehouse not found");
+  tenant.assertOwned(user, source, "Warehouse not found");
+  tenant.assertOwned(user, dest, "Warehouse not found");
   if (source.status !== "ACTIVE" || dest.status !== "ACTIVE") {
     throw AppError.badRequest("Both warehouses must be active");
   }
 };
 
-const buildLines = async (items) => {
+const buildLines = async (items, user) => {
   const ids = items.map((i) => i.productId);
   if (new Set(ids).size !== ids.length) {
     throw AppError.badRequest("Duplicate products are not allowed on a transfer");
@@ -38,7 +40,7 @@ const buildLines = async (items) => {
   const lines = [];
   for (const item of items) {
     const product = await Product.findByPk(item.productId);
-    if (!product) throw AppError.badRequest("Product not found");
+    tenant.assertOwned(user, product, "Product not found");
     lines.push({
       productId: item.productId,
       quantity: decimal.qty(item.quantity),
@@ -69,8 +71,8 @@ exports.getById = async (id, user) => {
 exports.create = async (payload, user) => {
   tenant.assertWarehouseAccess(user, payload.sourceWarehouseId);
   tenant.assertWarehouseAccess(user, payload.destinationWarehouseId);
-  await assertWarehouses(payload.sourceWarehouseId, payload.destinationWarehouseId);
-  const lines = await buildLines(payload.items);
+  await assertWarehouses(payload.sourceWarehouseId, payload.destinationWarehouseId, user);
+  const lines = await buildLines(payload.items, user);
   return sequelize.transaction(async (transaction) => {
     const transferNumber = await nextDocumentNumber("STOCK_TRANSFER", transaction);
     const transfer = await stockTransferRepository.create(
@@ -92,16 +94,16 @@ exports.create = async (payload, user) => {
   });
 };
 
-exports.update = async (id, payload) => {
+exports.update = async (id, payload, user) => {
   const transfer = await stockTransferRepository.findById(id);
-  if (!transfer) throw AppError.notFound("Stock transfer not found");
+  tenant.assertOwned(user, transfer, "Stock transfer not found");
   if (transfer.status !== "DRAFT") {
     throw AppError.badRequest("Only draft transfers can be updated");
   }
   const sourceId = payload.sourceWarehouseId || transfer.sourceWarehouseId;
   const destId = payload.destinationWarehouseId || transfer.destinationWarehouseId;
-  await assertWarehouses(sourceId, destId);
-  const lines = payload.items ? await buildLines(payload.items) : null;
+  await assertWarehouses(sourceId, destId, user);
+  const lines = payload.items ? await buildLines(payload.items, user) : null;
 
   return sequelize.transaction(async (transaction) => {
     const locked = await stockTransferRepository.findByIdForUpdate(id, transaction);
@@ -119,10 +121,11 @@ exports.update = async (id, payload) => {
   });
 };
 
-exports.complete = async (id, userId) => {
+exports.complete = async (id, user) => {
+  const userId = user.id;
   return sequelize.transaction(async (transaction) => {
     const transfer = await stockTransferRepository.findByIdForUpdate(id, transaction);
-    if (!transfer) throw AppError.notFound("Stock transfer not found");
+    tenant.assertOwned(user, transfer, "Stock transfer not found");
     if (transfer.status === "COMPLETED") {
       const existing = await stockTransferRepository.findById(id, transaction);
       return stockTransferRepository.toPublic(existing);
@@ -136,6 +139,7 @@ exports.complete = async (id, userId) => {
     await assertWarehouses(
       transfer.sourceWarehouseId,
       transfer.destinationWarehouseId,
+      user,
     );
 
     const pairs = [];
@@ -156,10 +160,19 @@ exports.complete = async (id, userId) => {
         locked[`${item.productId}|${transfer.sourceWarehouseId}`];
       const destInv =
         locked[`${item.productId}|${transfer.destinationWarehouseId}`];
-      const out = await inventoryPosting.postOutbound(
+      const moved = await stockBatchService.transferFifo(
+        {
+          sourceInventory: sourceInv,
+          destInventory: destInv,
+          quantity: item.quantity,
+        },
+        transaction,
+      );
+      await inventoryPosting.postOutbound(
         {
           inventory: sourceInv,
           quantity: item.quantity,
+          unitCost: moved.unitCost,
           type: "TRANSFER_OUT",
           createdBy: userId,
           referenceType: "STOCK_TRANSFER",
@@ -172,7 +185,7 @@ exports.complete = async (id, userId) => {
         {
           inventory: destInv,
           quantity: item.quantity,
-          unitCost: out.unitCost,
+          unitCost: moved.unitCost,
           type: "TRANSFER_IN",
           createdBy: userId,
           referenceType: "STOCK_TRANSFER",
@@ -183,6 +196,8 @@ exports.complete = async (id, userId) => {
       );
       item.receivedQuantity = item.quantity;
       await item.save({ transaction });
+      await stockBatchService.refreshAverageCost(sourceInv, transaction);
+      await stockBatchService.refreshAverageCost(destInv, transaction);
     }
 
     transfer.status = "COMPLETED";
@@ -192,9 +207,9 @@ exports.complete = async (id, userId) => {
   });
 };
 
-exports.cancel = async (id) => {
+exports.cancel = async (id, user) => {
   const transfer = await stockTransferRepository.findById(id);
-  if (!transfer) throw AppError.notFound("Stock transfer not found");
+  tenant.assertOwned(user, transfer, "Stock transfer not found");
   if (transfer.status !== "DRAFT") {
     throw AppError.badRequest("Only draft transfers can be cancelled");
   }

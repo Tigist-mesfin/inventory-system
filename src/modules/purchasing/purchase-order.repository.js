@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const models = require("../../database/models");
 const decimal = require("../../shared/helpers/decimal.helper");
+const vat = require("../../shared/helpers/vat.helper");
 
 const {
   PurchaseOrder,
@@ -41,6 +42,7 @@ const toPublic = (row) => {
     dueDate: plain.dueDate,
     subtotal: plain.subtotal,
     taxAmount: plain.taxAmount,
+    vatRate: vat.rate(),
     discountAmount: plain.discountAmount,
     totalAmount: plain.totalAmount,
     paidAmount: plain.paidAmount,
@@ -64,6 +66,7 @@ const toPublic = (row) => {
       remainingQuantity: decimal.subQty(item.quantity, item.receivedQuantity),
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,
+      ...vat.decorateLine(item.totalPrice),
       deliveryStatus: item.deliveryStatus || "NOT_DELIVERED",
       warehouseId: item.warehouseId || null,
       warehouse: item.warehouse || null,
@@ -129,7 +132,7 @@ exports.findItemById = async (id, transaction) =>
       {
         model: PurchaseOrder,
         as: "purchaseOrder",
-        attributes: ["id", "orderNumber", "status"],
+        attributes: ["id", "orderNumber", "status", "companyId"],
       },
     ],
     transaction,
@@ -203,6 +206,45 @@ exports.deliverySummary = async (poWhere) => {
     delivered: toPublic(buckets.DELIVERED),
     undeliveredCount: buckets.NOT_DELIVERED.count + buckets.ON_LOADING.count,
   };
+};
+
+exports.listUndeliveredItems = async (poWhere) => {
+  const rows = await PurchaseOrderItem.findAll({
+    where: { deliveryStatus: { [Op.ne]: "DELIVERED" } },
+    include: [
+      { model: Product, as: "product", attributes: ["id", "name", "unit"] },
+      {
+        model: PurchaseOrder,
+        as: "purchaseOrder",
+        attributes: ["id", "orderNumber", "orderDate", "notes", "status"],
+        where: poWhere,
+        required: true,
+        include: [{ model: Supplier, as: "supplier", attributes: ["id", "name"] }],
+      },
+    ],
+    order: [[{ model: PurchaseOrder, as: "purchaseOrder" }, "orderDate", "DESC"]],
+  });
+
+  return rows.map((row) => {
+    const plain = row.toJSON();
+    const notes = plain.purchaseOrder?.notes || "";
+    const walkIn = notes.startsWith("Walk-in:") ? notes.replace(/^Walk-in:\s*/, "Walk-in · ") : null;
+    return {
+      id: plain.id,
+      purchaseOrderId: plain.purchaseOrderId,
+      productId: plain.productId,
+      productName: plain.product?.name || "Item",
+      unit: plain.product?.unit || "",
+      quantity: plain.quantity,
+      receivedQuantity: plain.receivedQuantity || 0,
+      remainingQuantity: decimal.subQty(plain.quantity, plain.receivedQuantity || 0),
+      deliveryStatus: plain.deliveryStatus || "NOT_DELIVERED",
+      warehouseId: plain.warehouseId || null,
+      date: plain.purchaseOrder?.orderDate,
+      document: plain.purchaseOrder?.orderNumber || "",
+      party: walkIn || plain.purchaseOrder?.supplier?.name || "—",
+    };
+  }).filter((row) => decimal.cmpQty(row.remainingQuantity, 0) > 0);
 };
 
 exports.create = async (payload, transaction) => {

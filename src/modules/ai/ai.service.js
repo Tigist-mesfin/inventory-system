@@ -1,8 +1,12 @@
 const AppError = require("../../shared/errors/AppError");
+const env = require("../../config/env");
 const tenant = require("../../shared/helpers/tenant.helper");
 const analytics = require("./analytics.service");
 const { createAIProvider } = require("./providers");
 const { TOOLS } = require("./intent.local");
+const sqlAssistant = require("./sqlAssistant.service");
+const clarifyService = require("./clarify.service");
+const summaryService = require("./summary.service");
 
 const provider = createAIProvider();
 
@@ -33,10 +37,27 @@ const canUse = (user, intent) => {
   );
 };
 
-exports.chat = async ({ question, filters = {} }, user) => {
+exports.chat = async ({ question, filters = {}, mode } = {}, user) => {
   const text = String(question || "").trim();
   if (!text) throw AppError.badRequest("Question is required");
-  if (text.length > 500) throw AppError.badRequest("Question is too long");
+  if (text.length > 800) throw AppError.badRequest("Question is too long");
+
+  // Default: secure Gemini SQL assistant (company-scoped, SELECT-only).
+  // mode=tools keeps the older intent/analytics path when explicitly requested.
+  const useSqlAssistant =
+    mode !== "tools" && (env.GEMINI_API_KEY || mode === "sql");
+
+  if (useSqlAssistant) {
+    if (!env.GEMINI_API_KEY) {
+      throw AppError.badRequest(
+        "Gemini is not configured. Set GEMINI_API_KEY on the server.",
+      );
+    }
+    return sqlAssistant.handleUserAIQuery({
+      userQuestion: text,
+      user,
+    });
+  }
 
   const interpreted = await provider.interpret(text, filters);
   const intent = TOOLS.includes(interpreted.intent)
@@ -86,6 +107,13 @@ exports.chat = async ({ question, filters = {} }, user) => {
 };
 
 exports.dashboard = (query, user) => analytics.getInsightsDashboard(query, user);
+
+exports.clarify = ({ rawQuery }, user) =>
+  clarifyService.clarifyQuery({ rawQuery, user });
+
+exports.dailySummary = (query, user) => summaryService.getDailySummary(query, user);
+exports.monthlySummary = (query, user) => summaryService.getMonthlySummary(query, user);
+exports.insightBoard = (query, user) => summaryService.getInsightBoard(query, user);
 
 exports.run = (name, query, user) => {
   const fn = analytics.FUNCTIONS[name];

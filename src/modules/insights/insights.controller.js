@@ -26,3 +26,17 @@ exports.purchasesReport = catchAsync(async (req, res) => {
   const report = await insightsService.purchasesReport(req.query, req.user);
   sendSuccess(res, { data: { report }, message: "Purchases report retrieved" });
 });
+
+exports.itemProfitReport = catchAsync(async (req, res) => {
+  const report = await insightsService.itemProfitReport(req.query, req.user);
+  sendSuccess(res, {
+    data: { report },
+    meta: report.meta,
+    message: "Item profit report retrieved",
+  });
+});
+
+exports.vatReport = catchAsync(async (req, res) => {
+  const report = await insightsService.vatReport(req.query, req.user);
+  sendSuccess(res, { data: { report }, message: "VAT report retrieved" });
+});

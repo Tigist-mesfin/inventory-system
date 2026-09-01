@@ -1,12 +1,14 @@
-const sequelize = require("../../config/db");
-const AppError = require("../../shared/errors/AppError");
-const paginate = require("../../shared/helpers/pagination.helper");
+const { Op } = require("sequelize");
+const models = require("../../database/models");
 const decimal = require("../../shared/helpers/decimal.helper");
 const phoneNormalize = require("../../shared/helpers/phoneNormalize.helper");
 const customerRepository = require("./customer.repository");
 const tenant = require("../../shared/helpers/tenant.helper");
 const supplierService = require("../catalog/supplier/supplier.service");
 const supplierPaymentService = require("../purchasing/supplier-payment.service");
+const AppError = require("../../shared/errors/AppError");
+const paginate = require("../../shared/helpers/pagination.helper");
+const sequelize = require("../../config/db");
 
 const emptyToNull = (value) => {
   if (value === undefined) return undefined;
@@ -19,8 +21,32 @@ const withBalances = async (customer) => {
   return customerRepository.toPublic(customer, extras);
 };
 
+/** Fast list for sale/order pickers — no debt aggregation. */
+exports.listForPicker = async (query, user) => {
+  const { page, limit, offset } = paginate(query, {
+    defaultLimit: 200,
+    maxLimit: 500,
+  });
+  const where = customerRepository.searchWhere({
+    ...query,
+    type: query.type || "CUSTOMER",
+    status: query.status || "ACTIVE",
+  });
+  tenant.applyCompany(where, user);
+  const { rows, count } = await customerRepository.findAndCount({
+    where,
+    limit,
+    offset,
+  });
+  const customers = rows.map((row) => customerRepository.toPublic(row));
+  return paginate.buildResult("customers", customers, count, page, limit);
+};
+
 exports.list = async (query, user) => {
-  const { page, limit, offset } = paginate(query);
+  const { page, limit, offset } = paginate(query, {
+    defaultLimit: 50,
+    maxLimit: 500,
+  });
   const where = customerRepository.searchWhere(query);
   tenant.applyCompany(where, user);
   const { rows, count } = await customerRepository.findAndCount({
@@ -30,7 +56,11 @@ exports.list = async (query, user) => {
   });
   const customers = [];
   for (const row of rows) {
-    customers.push(await withBalances(row));
+    try {
+      customers.push(await withBalances(row));
+    } catch {
+      customers.push(customerRepository.toPublic(row));
+    }
   }
 
   let filtered = customers;
@@ -57,7 +87,8 @@ exports.getById = async (id, user) => {
   const publicCustomer = await withBalances(customer);
   const prices = await customerRepository.listPrices(id);
   const payments = await customerRepository.listPayments(id);
-  return { ...publicCustomer, prices, payments };
+  const walletTransactions = await customerRepository.listWalletTransactions(id);
+  return { ...publicCustomer, prices, payments, walletTransactions };
 };
 
 exports.create = async (payload, user) => {
@@ -98,9 +129,9 @@ exports.create = async (payload, user) => {
   });
 };
 
-exports.update = async (id, payload) => {
+exports.update = async (id, payload, user) => {
   const customer = await customerRepository.findById(id);
-  if (!customer) throw AppError.notFound("Customer not found");
+  tenant.assertOwned(user, customer, "Customer not found");
   if (payload.name !== undefined) customer.name = payload.name;
   if (payload.phone !== undefined) {
     customer.phone = phoneNormalize(payload.phone) || payload.phone;
@@ -120,9 +151,9 @@ exports.update = async (id, payload) => {
   return withBalances(saved);
 };
 
-exports.remove = async (id) => {
+exports.remove = async (id, user) => {
   const customer = await customerRepository.findById(id);
-  if (!customer) throw AppError.notFound("Customer not found");
+  tenant.assertOwned(user, customer, "Customer not found");
   const sales = await customerRepository.countSales(id);
   if (sales > 0) {
     throw AppError.conflict(
@@ -133,9 +164,9 @@ exports.remove = async (id) => {
   return { deleted: true };
 };
 
-exports.setPrices = async (id, prices) => {
+exports.setPrices = async (id, prices, user) => {
   const customer = await customerRepository.findById(id);
-  if (!customer) throw AppError.notFound("Customer not found");
+  tenant.assertOwned(user, customer, "Customer not found");
   return sequelize.transaction(async (transaction) =>
     customerRepository.replacePrices(id, prices, transaction),
   );
@@ -214,4 +245,137 @@ exports.recordPayment = async (id, payload, user) => {
     );
     return payment.toJSON();
   });
+};
+
+const isWalletPay = (value) =>
+  String(value || "").trim().toUpperCase() === "WALLET";
+
+exports.isWalletPay = isWalletPay;
+
+exports.listWallets = async (user) => {
+  const where = { type: "CUSTOMER" };
+  tenant.applyCompany(where, user);
+  const { rows } = await customerRepository.findAndCount({
+    where,
+    limit: 500,
+    offset: 0,
+  });
+  const customers = [];
+  for (const row of rows) {
+    customers.push(await withBalances(row));
+  }
+  customers.sort(
+    (a, b) => Number(b.walletBalance || 0) - Number(a.walletBalance || 0),
+  );
+  return { customers };
+};
+
+exports.listWalletTransactions = async (query, user) => {
+  const { page, limit, offset } = paginate(query, { defaultLimit: 50, maxLimit: 200 });
+  const where = customerRepository.walletSearchWhere(query);
+  tenant.applyCompany(where, user);
+  await customerRepository.applyWalletTextSearch(
+    where,
+    query.search,
+    tenant.companyIdOf(user),
+  );
+  const { rows, count } = await customerRepository.findWalletTransactions({
+    where,
+    limit,
+    offset,
+  });
+  return paginate.buildResult("transactions", rows, count, page, limit);
+};
+
+exports.rechargeWallet = async (id, payload, user) => {
+  const amount = decimal.money(payload.amount);
+  return sequelize.transaction(async (transaction) => {
+    const customer = await customerRepository.findByIdForUpdate(id, transaction);
+    tenant.assertOwned(user, customer, "Customer not found");
+    if (customer.type !== "CUSTOMER") {
+      throw AppError.badRequest("Only customers have a wallet");
+    }
+    customer.walletBalance = decimal.addMoney(customer.walletBalance || 0, amount);
+    await customer.save({ transaction });
+    const tx = await customerRepository.createWalletTransaction(
+      {
+        companyId: customer.companyId,
+        customerId: customer.id,
+        saleId: null,
+        recordedBy: user.id,
+        type: "DEPOSIT",
+        amount,
+        method: String(payload.method).trim(),
+        reason: emptyToNull(payload.reason) ?? null,
+        occurredAt: payload.paidAt || new Date(),
+      },
+      transaction,
+    );
+    return {
+      customer: await withBalances(customer),
+      transaction: customerRepository.toWalletPublic(tx),
+    };
+  });
+};
+
+exports.deductWalletForSale = async (
+  { customerId, amount, saleId, userId, companyId },
+  transaction,
+) => {
+  const paid = decimal.money(amount);
+  if (decimal.cmpMoney(paid, 0) <= 0) return null;
+  const customer = await customerRepository.findByIdForUpdate(customerId, transaction);
+  if (!customer) throw AppError.badRequest("Wallet payment needs a registered customer");
+  if (customer.type !== "CUSTOMER") {
+    throw AppError.badRequest("Only customers have a wallet");
+  }
+  if (decimal.cmpMoney(customer.walletBalance || 0, paid) < 0) {
+    throw AppError.badRequest(
+      `Not enough wallet balance. Available ${customer.walletBalance} ETB`,
+    );
+  }
+  customer.walletBalance = decimal.subMoney(customer.walletBalance || 0, paid);
+  await customer.save({ transaction });
+  return customerRepository.createWalletTransaction(
+    {
+      companyId: companyId || customer.companyId,
+      customerId: customer.id,
+      saleId,
+      recordedBy: userId,
+      type: "SALE",
+      amount: paid,
+      method: "WALLET",
+      reason: "Sale deducted from wallet",
+      occurredAt: new Date(),
+    },
+    transaction,
+  );
+};
+
+exports.refundWalletForSale = async ({ saleId, userId }, transaction) => {
+  const rows = await customerRepository.findSaleWalletDebits(saleId, transaction);
+  for (const row of rows) {
+    const customer = await customerRepository.findByIdForUpdate(
+      row.customerId,
+      transaction,
+    );
+    if (!customer) continue;
+    const amount = decimal.money(row.amount);
+    customer.walletBalance = decimal.addMoney(customer.walletBalance || 0, amount);
+    await customer.save({ transaction });
+    await customerRepository.createWalletTransaction(
+      {
+        companyId: customer.companyId,
+        customerId: customer.id,
+        saleId,
+        recordedBy: userId || row.recordedBy,
+        type: "REFUND",
+        amount,
+        method: "WALLET",
+        reason: "Sale cancelled — wallet refunded",
+        occurredAt: new Date(),
+      },
+      transaction,
+    );
+  }
 };

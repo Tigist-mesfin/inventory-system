@@ -7,7 +7,7 @@ const authenticate = require("../auth/auth.middleware");
 const { authorizePermission } = require("../auth/auth.middleware");
 const { aiChatLimiter } = require("../../shared/middlewares/rateLimit.middleware");
 const controller = require("./ai.controller");
-const { chatSchema, filtersQuerySchema } = require("./ai.validation");
+const { chatSchema, clarifySchema, filtersQuerySchema } = require("./ai.validation");
 
 const gate = authorizePermission(
   "insights:READ",
@@ -21,7 +21,11 @@ router.use(authenticate);
 router.use(gate);
 
 router.post("/chat", aiChatLimiter, validateBody(chatSchema), controller.chat);
+router.post("/clarify", aiChatLimiter, validateBody(clarifySchema), controller.clarify);
 router.get("/dashboard", validateQuery(filtersQuerySchema), controller.dashboard);
+router.get("/summary/daily", validateQuery(filtersQuerySchema), controller.dailySummary);
+router.get("/summary/monthly", validateQuery(filtersQuerySchema), controller.monthlySummary);
+router.get("/summary/insights", validateQuery(filtersQuerySchema), controller.insightBoard);
 router.get("/analytics/profit/products", validateQuery(filtersQuerySchema), controller.profitProducts);
 router.get("/analytics/profit/warehouses", validateQuery(filtersQuerySchema), controller.profitWarehouses);
 router.get("/analytics/profit/salesmen", validateQuery(filtersQuerySchema), controller.profitSalesmen);

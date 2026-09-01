@@ -10,6 +10,7 @@ const controller = require("./customer-order.controller");
 const {
   listQuerySchema,
   idParamSchema,
+  shareTokenParamSchema,
   updateSchema,
   createSchema,
   approveSchema,
@@ -17,9 +18,20 @@ const {
   paymentSchema,
 } = require("./customer-order.validation");
 
+router.get(
+  "/share/:token",
+  validateParams(shareTokenParamSchema),
+  controller.getPublicProforma,
+);
+
 router.use(authenticate);
 
 router.get("/", authorizePermission("sales", "READ"), validateQuery(listQuerySchema), controller.list);
+router.get(
+  "/customers",
+  authorizePermission("sales:READ", "sales:CREATE", "customers:READ"),
+  controller.listCustomers,
+);
 router.post(
   "/",
   authorizePermission("sales", "CREATE"),

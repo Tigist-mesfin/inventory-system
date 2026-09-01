@@ -4,8 +4,22 @@ const decimal = require("../../shared/helpers/decimal.helper");
 const tenant = require("../../shared/helpers/tenant.helper");
 const models = require("../../database/models");
 const expenseRepository = require("./expense.repository");
+const otherIncomeService = require("./other-income.service");
 
 const { Sale, StockTransaction } = models;
+const vat = require("../../shared/helpers/vat.helper");
+
+const marginPct = (part, whole) => {
+  if (decimal.isZeroMoney(whole)) return "0.00";
+  return ((Number(part) / Number(whole)) * 100).toFixed(2);
+};
+
+const resolvedVat = (taxAmount, netAmount) => {
+  if (taxAmount != null && decimal.cmpMoney(taxAmount, 0) > 0) {
+    return decimal.money(taxAmount);
+  }
+  return vat.vatOf(netAmount);
+};
 
 const emptyToNull = (value) => {
   if (value === undefined) return undefined;
@@ -34,6 +48,8 @@ const PERIOD_LABELS = {
   last_month: "Last month",
   this_year: "This year",
   custom: "Custom dates",
+  all_time: "All time",
+  all: "All time",
 };
 
 exports.resolvePeriod = (query = {}) => {
@@ -42,6 +58,7 @@ exports.resolvePeriod = (query = {}) => {
     query.period || (query.from || query.to ? "custom" : "this_month");
   let from;
   let to = endOfDay(now);
+  let unbounded = false;
 
   if (period === "today") {
     from = startOfDay(now);
@@ -53,6 +70,10 @@ exports.resolvePeriod = (query = {}) => {
     to = endOfDay(new Date(now.getFullYear(), now.getMonth(), 0));
   } else if (period === "this_year") {
     from = new Date(now.getFullYear(), 0, 1);
+  } else if (period === "all_time" || period === "all") {
+    unbounded = true;
+    from = null;
+    to = endOfDay(now);
   } else if (period === "custom") {
     from = query.from
       ? startOfDay(query.from)
@@ -63,10 +84,11 @@ exports.resolvePeriod = (query = {}) => {
   }
 
   return {
-    period,
+    period: period === "all" ? "all_time" : period,
     label: PERIOD_LABELS[period] || PERIOD_LABELS.this_month,
     from,
     to,
+    unbounded,
   };
 };
 
@@ -75,6 +97,7 @@ exports.list = async (query, user) => {
   const where = expenseRepository.searchWhere({
     search: query.search,
     category: query.category,
+    paymentMethod: query.paymentMethod || undefined,
     from: query.from ? startOfDay(query.from) : undefined,
     to: query.to ? endOfDay(query.to) : undefined,
   });
@@ -166,6 +189,7 @@ exports.report = async (query, user) => {
   const range = exports.resolvePeriod(query);
   const where = expenseRepository.searchWhere({
     category: query.category,
+    paymentMethod: query.paymentMethod || undefined,
     from: range.from,
     to: range.to,
   });
@@ -176,22 +200,45 @@ exports.report = async (query, user) => {
 
 exports.incomeStatement = async (query, user) => {
   const range = exports.resolvePeriod(query);
-  const saleWhere = {
-    status: "COMPLETED",
-    saleDate: { [Op.gte]: range.from, [Op.lte]: range.to },
-  };
+  const saleWhere = { status: "COMPLETED" };
   tenant.applyCompany(saleWhere, user);
   tenant.applyWarehouse(saleWhere, user);
+  if (!range.unbounded && (range.from || range.to)) {
+    saleWhere.saleDate = {};
+    if (range.from) saleWhere.saleDate[Op.gte] = range.from;
+    if (range.to) saleWhere.saleDate[Op.lte] = range.to;
+  }
 
   const sales = await Sale.findAll({
     where: saleWhere,
-    attributes: ["id", "totalAmount", "saleDate"],
+    attributes: [
+      "id",
+      "subtotal",
+      "discountAmount",
+      "taxAmount",
+      "totalAmount",
+      "saleDate",
+    ],
   });
 
-  const revenue = sales.reduce(
-    (sum, sale) => decimal.addMoney(sum, sale.totalAmount),
-    decimal.money(0),
-  );
+  let salesRevenue = decimal.money(0);
+  let salesDiscount = decimal.money(0);
+  let salesVatCollected = decimal.money(0);
+  let salesTotalWithVat = decimal.money(0);
+
+  for (const sale of sales) {
+    const net = decimal.money(sale.subtotal || sale.totalAmount || 0);
+    const discount = decimal.money(sale.discountAmount || 0);
+    const vatAmount = resolvedVat(sale.taxAmount, net);
+    const total =
+      decimal.cmpMoney(sale.totalAmount || 0, 0) > 0
+        ? decimal.money(sale.totalAmount)
+        : vat.withVat(net);
+    salesRevenue = decimal.addMoney(salesRevenue, net);
+    salesDiscount = decimal.addMoney(salesDiscount, discount);
+    salesVatCollected = decimal.addMoney(salesVatCollected, vatAmount);
+    salesTotalWithVat = decimal.addMoney(salesTotalWithVat, total);
+  }
 
   let cogs = decimal.money(0);
   if (sales.length) {
@@ -204,45 +251,97 @@ exports.incomeStatement = async (query, user) => {
       attributes: ["quantity", "unitCost"],
     });
     cogs = txs.reduce(
-      (sum, tx) => decimal.addMoney(sum, decimal.lineTotal(tx.quantity, tx.unitCost || 0)),
+      (sum, tx) =>
+        decimal.addMoney(sum, decimal.lineTotal(tx.quantity, tx.unitCost || 0)),
       decimal.money(0),
     );
   }
 
-  const expenseWhere = {
-    expenseDate: { [Op.gte]: range.from, [Op.lte]: range.to },
-  };
+  const expenseWhere = {};
+  if (!range.unbounded && (range.from || range.to)) {
+    expenseWhere.expenseDate = {};
+    if (range.from) expenseWhere.expenseDate[Op.gte] = range.from;
+    if (range.to) expenseWhere.expenseDate[Op.lte] = range.to;
+  }
   tenant.applyCompany(expenseWhere, user);
   const expenses = await expenseRepository.findAll({ where: expenseWhere });
   const expenseSummary = summarizeExpenses(expenses);
 
-  const grossProfit = decimal.subMoney(revenue, cogs);
+  const otherIncomeRange = range.unbounded
+    ? { from: new Date(2000, 0, 1), to: range.to }
+    : range;
+  const otherIncome = await otherIncomeService.totalForPeriod(
+    otherIncomeRange,
+    user,
+  );
+
+  const grossProfit = decimal.subMoney(salesRevenue, cogs);
   const operatingExpenses = expenseSummary.totals.amount;
-  const netIncome = decimal.subMoney(grossProfit, operatingExpenses);
+  const operatingProfit = decimal.subMoney(grossProfit, operatingExpenses);
+  const totalRevenue = decimal.addMoney(salesRevenue, otherIncome);
+  const netIncome = decimal.addMoney(operatingProfit, otherIncome);
 
   return {
-    period: range,
+    period: {
+      ...range,
+      from: range.from || null,
+      to: range.to || null,
+    },
+    vatRate: vat.rate(),
+    notes: {
+      revenueBasis:
+        "Sales revenue uses completed sale subtotals (net of line discounts stored on the sale). VAT is tracked separately and is not subtracted again from net profit.",
+      cogsBasis:
+        "COGS uses stock_transactions unitCost snapshots for SALE postings (inventory WAC / FIFO cost at sale time), not purchase-order totals.",
+      purchasesNote:
+        "Inventory purchases are assets until sold; they are not treated as operating expenses on this statement.",
+      otherIncomeNote:
+        "Other income is shown after operating profit and is also included in Total Revenue for summary cards.",
+    },
     sales: {
-      label: "Sales",
+      label: "Sales revenue",
       count: sales.length,
-      amount: revenue,
+      amount: salesRevenue,
+      discountAmount: salesDiscount,
+      vatCollected: salesVatCollected,
+      totalWithVat: salesTotalWithVat,
+      pctOfRevenue: marginPct(salesRevenue, totalRevenue),
     },
     cogs: {
       label: "Cost of goods sold",
       amount: cogs,
+      pctOfRevenue: marginPct(cogs, salesRevenue),
     },
     grossProfit: {
       label: "Gross profit",
       amount: grossProfit,
+      marginPct: marginPct(grossProfit, salesRevenue),
     },
     operatingExpenses: {
       label: "Operating expenses",
       amount: operatingExpenses,
       byCategory: expenseSummary.byCategory,
+      pctOfRevenue: marginPct(operatingExpenses, salesRevenue),
+    },
+    operatingProfit: {
+      label: "Operating profit",
+      amount: operatingProfit,
+      marginPct: marginPct(operatingProfit, salesRevenue),
+    },
+    otherIncome: {
+      label: "Other income",
+      amount: otherIncome,
+      pctOfRevenue: marginPct(otherIncome, totalRevenue),
+    },
+    totalRevenue: {
+      label: "Total revenue",
+      amount: totalRevenue,
     },
     netIncome: {
       label: "Net income",
       amount: netIncome,
+      marginPct: marginPct(netIncome, totalRevenue),
+      result: decimal.cmpMoney(netIncome, 0) < 0 ? "LOSS" : "PROFIT",
     },
   };
 };

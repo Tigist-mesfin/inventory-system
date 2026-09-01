@@ -175,6 +175,20 @@ module.exports = (sequelize, DataTypes) => {
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });
+
+    Sale.hasMany(models.CustomerWalletTransaction, {
+      foreignKey: "saleId",
+      as: "walletTransactions",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    Sale.hasMany(models.SaleCostAllocation, {
+      foreignKey: "saleId",
+      as: "costAllocations",
+      onDelete: "CASCADE",
+      onUpdate: "CASCADE",
+    });
   };
 
   return Sale;

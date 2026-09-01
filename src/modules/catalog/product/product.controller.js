@@ -42,6 +42,14 @@ exports.priceHistory = catchAsync(async (req, res) => {
   });
 });
 
+exports.history = catchAsync(async (req, res) => {
+  const history = await productService.history(req.params.id, req.query, req.user);
+  sendSuccess(res, {
+    data: { history },
+    message: "Item history retrieved",
+  });
+});
+
 exports.remove = catchAsync(async (req, res) => {
   await productService.remove(req.params.id, req.user);
   sendSuccess(res, { data: null, message: "Product deleted" });

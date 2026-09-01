@@ -26,16 +26,16 @@ exports.create = catchAsync(async (req, res) => {
 });
 
 exports.update = catchAsync(async (req, res) => {
-  const transfer = await stockTransferService.update(req.params.id, req.body);
+  const transfer = await stockTransferService.update(req.params.id, req.body, req.user);
   sendSuccess(res, { data: { transfer }, message: "Stock transfer updated" });
 });
 
 exports.complete = catchAsync(async (req, res) => {
-  const transfer = await stockTransferService.complete(req.params.id, req.user.id);
+  const transfer = await stockTransferService.complete(req.params.id, req.user);
   sendSuccess(res, { data: { transfer }, message: "Stock transfer completed" });
 });
 
 exports.cancel = catchAsync(async (req, res) => {
-  const transfer = await stockTransferService.cancel(req.params.id);
+  const transfer = await stockTransferService.cancel(req.params.id, req.user);
   sendSuccess(res, { data: { transfer }, message: "Stock transfer cancelled" });
 });

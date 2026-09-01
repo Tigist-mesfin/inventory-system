@@ -12,9 +12,14 @@ const emptyToNull = (value) => {
 };
 
 exports.list = async (query, user) => {
-  const { page, limit, offset } = paginate(query);
+  const { page, limit, offset } = paginate(query, { defaultLimit: 200, maxLimit: 500 });
   const where = warehouseRepository.searchWhere(query);
-  tenant.applyCompany(where, user);
+  const companyId = tenant.companyIdOf(user);
+  if (companyId) {
+    where[Op.or] = [{ companyId }, { companyId: null }];
+  } else if (!tenant.isOwner(user)) {
+    where.companyId = "00000000-0000-0000-0000-000000000000";
+  }
   const ids = tenant.warehouseIdsOf(user);
   if (ids) where.id = ids.length ? { [Op.in]: ids } : null;
   const { rows, count } = await warehouseRepository.findAndCount({

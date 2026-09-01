@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { api, money, qty } from "../../api/client";
-import LineEditor, { emptyLine, lineAmount } from "../../components/LineEditor";
-import { isOwner } from "../../auth/access";
+import { Link } from "react-router-dom";
+import { api, money, qty, withVat } from "../../api/client";
+import LineEditor, { emptyLine, lineAmount, VatSummary } from "../../components/LineEditor";
+import { can, isOwner } from "../../auth/access";
 import { useAuth } from "../../auth/AuthContext";
+import InventoryLoading from "../../components/InventoryLoading";
 
 const STATUS_LABEL = {
   NOT_DELIVERED: "Not delivered",
@@ -11,7 +13,7 @@ const STATUS_LABEL = {
 };
 
 function itemChips(items = []) {
-  const shown = items.slice(0, 6);
+  const shown = items.slice(0, 4);
   const extra = items.length - shown.length;
   return (
     <div className="stat-items">
@@ -26,9 +28,23 @@ function itemChips(items = []) {
   );
 }
 
-function PayModal({ row, methods, busy, error, onClose, onSave }) {
-  const remaining = Number(row.remainingBalance || 0);
-  const [amount, setAmount] = useState(remaining ? remaining.toFixed(2) : "");
+function unpaidFromLines(lines = []) {
+  const seen = new Set();
+  let unpaid = 0;
+  for (const row of lines) {
+    if (seen.has(row.purchaseOrderId)) continue;
+    seen.add(row.purchaseOrderId);
+    unpaid += Number(row.remainingBalance || 0);
+  }
+  return unpaid;
+}
+
+function UpdateModal({ row, warehouses, methods, owner, busy, error, onClose, onSave }) {
+  const remaining = Math.max(0, Number(row.remainingBalance || 0));
+  const [status, setStatus] = useState(row.deliveryStatus || "NOT_DELIVERED");
+  const [warehouseId, setWarehouseId] = useState(row.warehouseId || warehouses[0]?.id || "");
+  const [quantity, setQuantity] = useState(row.quantity);
+  const [payAmount, setPayAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState(row.paymentMethod || methods[0]?.name || "");
 
   useEffect(() => {
@@ -41,8 +57,11 @@ function PayModal({ row, methods, busy, error, onClose, onSave }) {
 
   const submit = (event) => {
     event.preventDefault();
-    onSave(row.purchaseOrderId, {
-      amount: Number(amount),
+    onSave(row, {
+      deliveryStatus: status,
+      warehouseId: warehouseId || null,
+      quantity: Number(quantity),
+      payAmount: remaining > 0 ? Number(payAmount || 0) : 0,
       paymentMethod,
     });
   };
@@ -55,122 +74,81 @@ function PayModal({ row, methods, busy, error, onClose, onSave }) {
         aria-modal="true"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2>Complete payment</h2>
+        <h2>Update purchase</h2>
         <p className="muted">
-          {row.document} · remaining {money(remaining)} ETB
+          {row.productName} · unpaid {money(remaining)} ETB
         </p>
         <form onSubmit={submit}>
-          <label className="field">
-            <span>Amount paid now</span>
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              max={remaining}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              disabled={busy}
-              required
-            />
-          </label>
-          <label className="field">
-            <span>Payment method / account</span>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              disabled={busy}
-              required
-            >
-              {methods.map((m) => (
-                <option key={m.id} value={m.name}>{m.name}</option>
-              ))}
-            </select>
-          </label>
+          {owner ? (
+            <>
+              <label className="field">
+                <span>Status</span>
+                <select value={status} onChange={(e) => setStatus(e.target.value)} disabled={busy}>
+                  {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Deliver into warehouse</span>
+                <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} disabled={busy}>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Amount {row.unit ? `(${row.unit})` : ""}</span>
+                <input
+                  type="number"
+                  min="0.001"
+                  step="0.001"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  disabled={busy}
+                  required
+                />
+              </label>
+            </>
+          ) : null}
+          {remaining > 0 ? (
+            <>
+              <label className="field">
+                <span>Amount to pay (ETB)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  disabled={busy}
+                  placeholder={`Unpaid ${money(remaining)}`}
+                />
+                <span className="muted">Unpaid balance: {money(remaining)} ETB</span>
+              </label>
+              <label className="field">
+                <span>Payment method / account</span>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  disabled={busy}
+                  required={Number(payAmount || 0) > 0}
+                >
+                  {methods.map((m) => (
+                    <option key={m.id} value={m.name}>{m.name}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <p className="muted">This purchase is fully paid.</p>
+          )}
           {error ? <p className="error">{error}</p> : null}
           <div className="modal-actions">
             <button type="button" className="btn secondary" onClick={onClose} disabled={busy}>
               Cancel
             </button>
-            <button type="submit" className="btn saffron" disabled={busy}>
-              {busy ? "Saving…" : "Record payment"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function DeliveryModal({ row, warehouses, busy, error, onClose, onSave }) {
-  const [status, setStatus] = useState(row.deliveryStatus || "NOT_DELIVERED");
-  const [warehouseId, setWarehouseId] = useState(row.warehouseId || warehouses[0]?.id || "");
-  const [quantity, setQuantity] = useState(row.quantity);
-
-  useEffect(() => {
-    const onKey = (event) => {
-      if (event.key === "Escape" && !busy) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
-
-  const submit = (event) => {
-    event.preventDefault();
-    onSave(row.id, {
-      deliveryStatus: status,
-      warehouseId: warehouseId || null,
-      quantity: Number(quantity),
-    });
-  };
-
-  return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
-      <div
-        className="modal-card"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delivery-modal-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 id="delivery-modal-title">Update delivery</h2>
-        <p className="muted">
-          {row.productName} · {row.document}
-        </p>
-        <form onSubmit={submit}>
-          <label className="field">
-            <span>Status</span>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} disabled={busy}>
-              {Object.entries(STATUS_LABEL).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Store / warehouse</span>
-            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} disabled={busy}>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Amount {row.unit ? `(${row.unit})` : ""}</span>
-            <input
-              type="number"
-              min="0.001"
-              step="0.001"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              disabled={busy}
-              required
-            />
-          </label>
-          {error ? <p className="error">{error}</p> : null}
-          <div className="modal-actions">
-            <button type="button" className="btn secondary" onClick={onClose} disabled={busy}>
-              Cancel
-            </button>
-            <button type="submit" className="btn saffron" disabled={busy}>
+            <button type="submit" className="btn success" disabled={busy}>
               {busy ? "Saving…" : "Save update"}
             </button>
           </div>
@@ -207,9 +185,13 @@ export default function PurchasingPage() {
   const [modalError, setModalError] = useState("");
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [paying, setPaying] = useState(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [showAllColumns, setShowAllColumns] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 900px)").matches,
+  );
 
-  const grandTotal = lines.reduce((sum, line) => sum + lineAmount(line), 0);
+  const subtotal = lines.reduce((sum, line) => sum + lineAmount(line), 0);
+  const grandTotal = withVat(subtotal);
 
   useEffect(() => {
     setPaidAmount(grandTotal ? grandTotal.toFixed(2) : "");
@@ -284,6 +266,7 @@ export default function PurchasingPage() {
       });
       setLines([emptyLine()]);
       setWalkInName("");
+      setFormOpen(false);
       await Promise.all([loadLookups(), loadRecords()]);
     } catch (err) {
       setError(err.message);
@@ -292,31 +275,37 @@ export default function PurchasingPage() {
     }
   };
 
-  const savePayment = async (purchaseOrderId, payload) => {
+  const saveUpdate = async (row, payload) => {
     setBusy(true);
     setModalError("");
     try {
-      await api(`/api/purchase-orders/${purchaseOrderId}/payments`, {
-        method: "POST",
-        body: payload,
-      });
-      setPaying(null);
-      await loadRecords();
-    } catch (err) {
-      setModalError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const saveItem = async (itemId, payload) => {
-    setBusy(true);
-    setModalError("");
-    try {
-      await api(`/api/purchase-orders/items/${itemId}`, {
-        method: "PATCH",
-        body: payload,
-      });
+      const remaining = Math.max(0, Number(row.remainingBalance || 0));
+      const payAmount = Number(payload.payAmount || 0);
+      if (payAmount < 0) {
+        throw new Error("Amount to pay cannot be negative");
+      }
+      if (payAmount > remaining + 0.001) {
+        throw new Error(`Amount to pay cannot exceed unpaid ${money(remaining)} ETB`);
+      }
+      if (owner) {
+        await api(`/api/purchase-orders/items/${row.id}`, {
+          method: "PATCH",
+          body: {
+            deliveryStatus: payload.deliveryStatus,
+            warehouseId: payload.warehouseId,
+            quantity: payload.quantity,
+          },
+        });
+      }
+      if (payAmount > 0) {
+        await api(`/api/purchase-orders/${row.purchaseOrderId}/payments`, {
+          method: "POST",
+          body: {
+            amount: payAmount,
+            paymentMethod: payload.paymentMethod,
+          },
+        });
+      }
       setEditing(null);
       await loadRecords();
     } catch (err) {
@@ -342,152 +331,156 @@ export default function PurchasingPage() {
     }
   };
 
+  const unpaidTotal = unpaidFromLines(report?.lines || []);
+
+  if (!report && !error) {
+    return <InventoryLoading message="Loading inventory..." />;
+  }
+
   return (
-    <>
+    <div className="purchase-page">
       <div className="topbar">
-        <div>
-          <h1 style={{ margin: 0 }}>Record a purchase</h1>
-          <p className="muted">
-            Buying records the purchase only. Stock is added to a warehouse after the store keeper (or admin) marks the item delivered.
-          </p>
+        <h1 style={{ margin: 0 }}>Purchases</h1>
+        <div className="row-actions">
+          {can(user, "purchasing", "CREATE") ? (
+            <Link className="btn" to="/buy/import">
+              Import from Excel
+            </Link>
+          ) : null}
+          {formOpen ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setFormOpen(false);
+                setError("");
+              }}
+            >
+              Close form
+            </button>
+          ) : can(user, "purchasing", "CREATE") ? (
+            <button type="button" className="btn" onClick={() => setFormOpen(true)}>
+              Add purchase
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <section className="grid stats three" style={{ marginBottom: 16 }}>
-        <article className="card stat-card">
-          <span className="muted">Not delivered</span>
+      <section className="purchase-analytics">
+        <article className="analytics-card">
+          <span>Not delivered</span>
           <b>{summary.notDelivered.count}</b>
           <small>Waiting for the store</small>
           {itemChips(summary.notDelivered.items)}
         </article>
-        <article className="card stat-card">
-          <span className="muted">On loading</span>
+        <article className="analytics-card">
+          <span>On loading</span>
           <b>{summary.onLoading.count}</b>
           <small>In progress</small>
           {itemChips(summary.onLoading.items)}
         </article>
-        <article className="card stat-card">
-          <span className="muted">Delivered to store</span>
+        <article className="analytics-card">
+          <span>Delivered</span>
           <b>{summary.delivered.count}</b>
           <small>Already in warehouse</small>
           {itemChips(summary.delivered.items)}
         </article>
+        <article className="analytics-card">
+          <span>Unpaid</span>
+          <b>{money(unpaidTotal)}</b>
+          <small>ETB still outstanding</small>
+        </article>
       </section>
 
-      <div className="card" style={{ marginBottom: 18 }}>
-        {owner ? (
-          <div className="toolbar" style={{ marginTop: 0 }}>
-            <label className="field">
-              <span>Deliver all into this warehouse</span>
-              <select
-                value={deliverWarehouseId}
-                onChange={(e) => setDeliverWarehouseId(e.target.value)}
-              >
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="btn saffron"
-              disabled={busy || !deliverWarehouseId || summary.undeliveredCount === 0}
-              onClick={deliverAll}
-            >
-              {busy ? "Updating…" : "Mark all as delivered to store"}
+      {formOpen ? (
+        <form className="card" onSubmit={submit}>
+          <div className="seg">
+            <button type="button" className={`btn ${party === "registered" ? "" : "secondary"}`} onClick={() => setParty("registered")}>
+              Registered supplier
+            </button>
+            <button type="button" className={`btn ${party === "walkin" ? "" : "secondary"}`} onClick={() => setParty("walkin")}>
+              Walk-in seller
             </button>
           </div>
-        ) : (
-          <p className="muted" style={{ margin: 0 }}>
-            New purchases are saved as not delivered. An admin can change status and warehouse.
-          </p>
-        )}
-      </div>
 
-      <form className="card" onSubmit={submit}>
-        <div className="seg">
-          <button type="button" className={`btn ${party === "registered" ? "" : "secondary"}`} onClick={() => setParty("registered")}>
-            Registered supplier
-          </button>
-          <button type="button" className={`btn ${party === "walkin" ? "" : "secondary"}`} onClick={() => setParty("walkin")}>
-            Walk-in seller
-          </button>
-        </div>
-
-        <div className="grid split" style={{ marginTop: 14 }}>
-          {party === "registered" ? (
+          <div className="grid split" style={{ marginTop: 14 }}>
+            {party === "registered" ? (
+              <label className="field">
+                <span>Supplier</span>
+                <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
+                  <option value="">Select supplier</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="field">
+                <span>Walk-in seller name</span>
+                <input value={walkInName} onChange={(e) => setWalkInName(e.target.value)} placeholder="Name of the person you bought from" required />
+              </label>
+            )}
             <label className="field">
-              <span>Supplier from list</span>
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
-                <option value="">Select supplier</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+              <span>Payment method</span>
+              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} required>
+                <option value="">Select method</option>
+                {methods.map((m) => (
+                  <option key={m.id} value={m.name}>{m.name}</option>
                 ))}
               </select>
             </label>
-          ) : (
             <label className="field">
-              <span>Walk-in seller name</span>
-              <input value={walkInName} onChange={(e) => setWalkInName(e.target.value)} placeholder="Name of the person you bought from" required />
+              <span>Amount paid (ETB)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                max={grandTotal || undefined}
+                value={paidAmount}
+                onChange={(e) => setPaidAmount(e.target.value)}
+                required
+              />
             </label>
-          )}
-          <label className="field">
-            <span>Payment method / account</span>
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} required>
-              <option value="">Select method</option>
-              {methods.map((m) => (
-                <option key={m.id} value={m.name}>{m.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Amount paid (ETB)</span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              max={grandTotal || undefined}
-              value={paidAmount}
-              onChange={(e) => setPaidAmount(e.target.value)}
-              required
-            />
-          </label>
+          </div>
+
+          <h3>Items bought</h3>
+          <LineEditor
+            products={products}
+            showStock={false}
+            lines={lines}
+            onChange={setLines}
+            priceKey="purchasePrice"
+            addLabel="Add other item"
+            addClassName="btn success add-item-btn"
+          />
+
+          <VatSummary lines={lines} products={products} label="Grand total cost" />
+
+          {error ? <p className="error">{error}</p> : null}
+          <button className="btn success" style={{ marginTop: 16 }} disabled={busy}>
+            {busy ? "Saving purchase…" : "Save purchase"}
+          </button>
+        </form>
+      ) : null}
+
+      <div className="card" style={{ marginTop: formOpen ? 18 : 0 }}>
+        <div className="catalog-list-head">
+          <h3 style={{ margin: 0 }}>Purchase records</h3>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setShowAllColumns((next) => !next)}
+          >
+            {showAllColumns ? "Basic columns" : "Show all columns"}
+          </button>
         </div>
-
-        <h3>Items bought</h3>
-        <LineEditor products={products} showStock={false} lines={lines} onChange={setLines} priceKey="purchasePrice" />
-
-        <div className="totals-box" style={{ marginTop: 16 }}>
-          {lines.filter((l) => l.productId).map((line) => {
-            const product = products.find((p) => p.id === line.productId);
-            return (
-              <div key={line.productId}>
-                {product?.name} total: <strong>{money(lineAmount(line))} ETB</strong>
-                <span className="muted"> ({qty(line.quantity)} {product?.unit} × {money(line.unitPrice)})</span>
-              </div>
-            );
-          })}
-          <p style={{ marginBottom: 0 }}>
-            Grand total cost: <strong>{money(grandTotal)} ETB</strong>
-          </p>
-        </div>
-
-        {error ? <p className="error">{error}</p> : null}
-        <button className="btn saffron" style={{ marginTop: 16 }} disabled={busy}>
-          {busy ? "Saving purchase…" : "Save purchase"}
-        </button>
-      </form>
-
-      <div className="card" style={{ marginTop: 18 }}>
-        <h3>Purchase records</h3>
-        <p className="muted">Each purchased line is not delivered, on loading, or delivered to store.</p>
-        <div className="toolbar">
+        <div className="toolbar purchase-filters">
           <label className="field">
-            <span>From date</span>
+            <span>From</span>
             <input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
           </label>
           <label className="field">
-            <span>To date</span>
+            <span>To</span>
             <input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} />
           </label>
           <label className="field">
@@ -500,7 +493,7 @@ export default function PurchasingPage() {
             </select>
           </label>
           <label className="field">
-            <span>Payment method</span>
+            <span>Payment</span>
             <select
               value={filters.paymentMethod}
               onChange={(e) => setFilters({ ...filters, paymentMethod: e.target.value })}
@@ -513,7 +506,7 @@ export default function PurchasingPage() {
           </label>
           {owner ? (
             <label className="field">
-              <span>Salesman</span>
+              <span>Staff</span>
               <select
                 value={filters.createdBy}
                 onChange={(e) => setFilters({ ...filters, createdBy: e.target.value })}
@@ -527,101 +520,97 @@ export default function PurchasingPage() {
             </label>
           ) : null}
         </div>
-        <div className="table-wrap">
+        {error && !formOpen ? <p className="error">{error}</p> : null}
+        {owner && summary.undeliveredCount > 0 ? (
+          <div className="toolbar purchase-filters" style={{ marginTop: 0 }}>
+            <label className="field">
+              <span>Deliver all into</span>
+              <select
+                value={deliverWarehouseId}
+                onChange={(e) => setDeliverWarehouseId(e.target.value)}
+              >
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || !deliverWarehouseId}
+              onClick={deliverAll}
+            >
+              {busy ? "Updating…" : `Deliver all (${summary.undeliveredCount})`}
+            </button>
+          </div>
+        ) : null}
+        <div className={`table-wrap purchase-table ${showAllColumns ? "is-expanded" : "is-compact"}`}>
           <table>
             <thead>
               <tr>
-                <th>Purchase date</th>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>Unit price</th>
-                <th>Line total</th>
-                <th>Bought from</th>
-                <th>Salesman</th>
+                {showAllColumns ? <th>Date</th> : null}
+                <th>Item name</th>
+                <th>Quantity</th>
+                {showAllColumns ? <th>Unit price</th> : null}
+                {showAllColumns ? <th>Amount</th> : null}
+                <th>Cost with VAT</th>
+                {showAllColumns ? <th>Bought from</th> : null}
+                {showAllColumns ? <th>Staff</th> : null}
                 <th>Paid</th>
-                <th>Method</th>
+                <th>Unpaid</th>
+                {showAllColumns ? <th>Method</th> : null}
                 <th>Status</th>
-                <th>Warehouse</th>
-                <th>Purchase #</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {(report?.lines || []).map((row, index, all) => {
-                const firstOfOrder = all.findIndex((line) => line.purchaseOrderId === row.purchaseOrderId) === index;
-                const canPay = firstOfOrder && Number(row.remainingBalance || 0) > 0;
-                return (
+              {(report?.lines || []).map((row) => (
                 <tr key={row.id}>
-                  <td>{row.date}</td>
-                  <td>
-                    {row.productName}
-                    <div className="muted">{row.unit}</div>
-                  </td>
+                  {showAllColumns ? <td>{row.date}</td> : null}
+                  <td><strong>{row.productName}</strong></td>
                   <td>{qty(row.quantity)} {row.unit}</td>
-                  <td>{money(row.unitPrice)} ETB</td>
-                  <td>{money(row.totalPrice)} ETB</td>
-                  <td>{row.party}</td>
-                  <td>{row.salesman || "—"}</td>
-                  <td>
-                    {money(row.paidAmount)} ETB
-                    {Number(row.remainingBalance || 0) > 0 ? (
-                      <div className="muted">left {money(row.remainingBalance)}</div>
-                    ) : null}
-                  </td>
-                  <td>{row.paymentMethod || "—"}</td>
+                  {showAllColumns ? <td>{money(row.unitPrice)} ETB</td> : null}
+                  {showAllColumns ? <td>{money(row.totalPrice)} ETB</td> : null}
+                  <td>{money(withVat(row.totalPrice))} ETB</td>
+                  {showAllColumns ? <td>{row.party || "—"}</td> : null}
+                  {showAllColumns ? <td>{row.salesman || "—"}</td> : null}
+                  <td>{money(row.paidAmount)} ETB</td>
+                  <td>{money(row.remainingBalance)} ETB</td>
+                  {showAllColumns ? <td>{row.paymentMethod || "—"}</td> : null}
                   <td>{STATUS_LABEL[row.deliveryStatus] || row.deliveryStatus}</td>
-                  <td>{row.warehouseName || "—"}</td>
-                  <td>{row.document}</td>
                   <td>
-                    <div className="row-actions">
-                      {canPay ? (
-                        <button
-                          type="button"
-                          className="btn saffron"
-                          onClick={() => {
-                            setModalError("");
-                            setPaying(row);
-                          }}
-                        >
-                          Complete payment
-                        </button>
-                      ) : null}
-                      {owner ? (
-                        <button
-                          type="button"
-                          className="btn secondary"
-                          onClick={() => {
-                            setModalError("");
-                            setEditing(row);
-                          }}
-                        >
-                          Update
-                        </button>
-                      ) : null}
-                    </div>
+                    <button
+                      type="button"
+                      className="btn success"
+                      onClick={() => {
+                        setModalError("");
+                        setEditing(row);
+                      }}
+                    >
+                      Update
+                    </button>
                   </td>
                 </tr>
-                );
-              })}
+              ))}
             </tbody>
           </table>
-          {(report?.lines || []).length === 0 ? <p className="empty muted">No purchases for this filter.</p> : null}
         </div>
+        {(report?.lines || []).length === 0 ? <p className="empty muted">No purchases for this filter.</p> : null}
         {report?.totals ? (
           <p className="totals-box" style={{ marginTop: 12 }}>
-            Filtered total: <strong>{money(report.totals.amount)} ETB</strong>
+            Filtered cost with VAT: <strong>{money(withVat(report.totals.amount))} ETB</strong>
             {" · "}
             Quantity: <strong>{qty(report.totals.quantity)}</strong>
-            {" · "}
-            Not delivered in this list: <strong>{report.undeliveredCount || 0}</strong>
           </p>
         ) : null}
       </div>
 
       {editing ? (
-        <DeliveryModal
+        <UpdateModal
           row={editing}
           warehouses={warehouses}
+          methods={methods}
+          owner={owner}
           busy={busy}
           error={modalError}
           onClose={() => {
@@ -630,24 +619,9 @@ export default function PurchasingPage() {
               setModalError("");
             }
           }}
-          onSave={saveItem}
+          onSave={saveUpdate}
         />
       ) : null}
-      {paying ? (
-        <PayModal
-          row={paying}
-          methods={methods}
-          busy={busy}
-          error={modalError}
-          onClose={() => {
-            if (!busy) {
-              setPaying(null);
-              setModalError("");
-            }
-          }}
-          onSave={savePayment}
-        />
-      ) : null}
-    </>
+    </div>
   );
 }

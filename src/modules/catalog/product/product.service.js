@@ -5,6 +5,9 @@ const productRepository = require("./product.repository");
 const tenant = require("../../../shared/helpers/tenant.helper");
 const categoryRepository = require("../category/category.repository");
 const supplierRepository = require("../supplier/supplier.repository");
+const models = require("../../../database/models");
+const { Op } = require("sequelize");
+const stockBatchService = require("../../inventory/stock-batch.service");
 
 const emptyToNull = (value) => {
   if (value === undefined) return undefined;
@@ -250,4 +253,296 @@ exports.remove = async (id, user) => {
   }
 
   return { deleted: true };
+};
+
+const dateKey = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+exports.history = async (id, query, user) => {
+  const product = await productRepository.findById(id);
+  tenant.assertOwned(user, product, "Product not found");
+
+  const {
+    PurchaseOrderItem,
+    PurchaseOrder,
+    Supplier,
+    Warehouse,
+    SaleItem,
+    Sale,
+    Customer,
+    User,
+    StockTransaction,
+    StockBatch,
+    SaleCostAllocation,
+  } = models;
+
+  const purchaseWhere = { productId: id };
+  if (query.warehouseId) {
+    purchaseWhere[Op.or] = [
+      { warehouseId: query.warehouseId },
+      { warehouseId: null },
+    ];
+  }
+  const poWhere = { status: { [Op.ne]: "CANCELLED" } };
+  tenant.applyCompany(poWhere, user);
+  if (query.from || query.to) {
+    poWhere.orderDate = {};
+    if (query.from) poWhere.orderDate[Op.gte] = query.from;
+    if (query.to) poWhere.orderDate[Op.lte] = query.to;
+  }
+  if (query.supplierId) poWhere.supplierId = query.supplierId;
+
+  const purchaseRows = await PurchaseOrderItem.findAll({
+    where: purchaseWhere,
+    include: [
+      {
+        model: PurchaseOrder,
+        as: "purchaseOrder",
+        required: true,
+        where: poWhere,
+        include: [
+          { model: Supplier, as: "supplier", attributes: ["id", "name"] },
+          { model: User, as: "creator", attributes: ["id", "fullName", "username"] },
+        ],
+      },
+      { model: Warehouse, as: "warehouse", attributes: ["id", "name", "code"], required: false },
+      {
+        model: StockBatch,
+        as: "stockBatches",
+        required: false,
+        include: [
+          {
+            model: SaleCostAllocation,
+            as: "costAllocations",
+            attributes: ["id", "quantity"],
+            required: false,
+          },
+        ],
+      },
+    ],
+    order: [[{ model: PurchaseOrder, as: "purchaseOrder" }, "orderDate", "DESC"]],
+  });
+
+  const purchases = purchaseRows
+    .filter((row) => {
+      if (query.unitCost == null || query.unitCost === "") return true;
+      return decimal.cmpMoney(row.unitPrice, query.unitCost) === 0;
+    })
+    .map((row) => {
+      const plain = row.toJSON();
+      const batches = plain.stockBatches || [];
+      const remainingQuantity = batches.reduce(
+        (sum, batch) => decimal.addQty(sum, batch.remainingQuantity || 0),
+        decimal.qty(0),
+      );
+      const soldQuantity = batches.reduce(
+        (sum, batch) =>
+          decimal.addQty(
+            sum,
+            (batch.costAllocations || []).reduce(
+              (inner, alloc) => decimal.addQty(inner, alloc.quantity || 0),
+              decimal.qty(0),
+            ),
+          ),
+        decimal.qty(0),
+      );
+      return {
+        id: plain.id,
+        purchaseOrderId: plain.purchaseOrderId,
+        purchaseOrderItemId: plain.id,
+        date: dateKey(plain.purchaseOrder.orderDate),
+        document: plain.purchaseOrder.orderNumber,
+        supplier: plain.purchaseOrder.supplier?.name || "Walk-in",
+        supplierId: plain.purchaseOrder.supplierId,
+        store: plain.warehouse?.name || "Not delivered",
+        warehouseId: plain.warehouseId,
+        quantity: plain.quantity,
+        receivedQuantity: plain.receivedQuantity,
+        unitCost: plain.unitPrice,
+        totalCost: plain.totalPrice,
+        remainingQuantity,
+        soldQuantity,
+        deliveryStatus: plain.deliveryStatus,
+        createdBy: plain.purchaseOrder.creator?.fullName || null,
+        batches: batches.map((batch) => stockBatchService.toPublicBatch(batch)),
+      };
+    });
+
+  const saleWhere = { status: "COMPLETED" };
+  tenant.applyCompany(saleWhere, user);
+  tenant.applyWarehouse(saleWhere, user);
+  if (query.warehouseId) saleWhere.warehouseId = query.warehouseId;
+  if (query.customerId) saleWhere.customerId = query.customerId;
+  if (query.createdBy) saleWhere.createdBy = query.createdBy;
+  if (query.from || query.to) {
+    saleWhere.saleDate = {};
+    if (query.from) saleWhere.saleDate[Op.gte] = query.from;
+    if (query.to) {
+      const to = new Date(query.to);
+      if (String(query.to).length <= 10) to.setHours(23, 59, 59, 999);
+      saleWhere.saleDate[Op.lte] = to;
+    }
+  }
+
+  const saleRows = await SaleItem.findAll({
+    where: { productId: id },
+    include: [
+      {
+        model: Sale,
+        as: "sale",
+        required: true,
+        where: saleWhere,
+        include: [
+          { model: Warehouse, as: "warehouse", attributes: ["id", "name", "code"] },
+          { model: User, as: "creator", attributes: ["id", "fullName", "username"] },
+          { model: Customer, as: "customer", attributes: ["id", "name"], required: false },
+        ],
+      },
+      {
+        model: SaleCostAllocation,
+        as: "costAllocations",
+        required: false,
+        include: [
+          {
+            model: StockBatch,
+            as: "stockBatch",
+            attributes: ["id", "purchaseDate", "unitCost", "sourceType"],
+          },
+        ],
+      },
+    ],
+    order: [[{ model: Sale, as: "sale" }, "saleDate", "DESC"]],
+  });
+
+  const sales = saleRows
+    .filter((row) => {
+      if (query.sellingPrice == null || query.sellingPrice === "") return true;
+      return decimal.cmpMoney(row.unitPrice, query.sellingPrice) === 0;
+    })
+    .map((row) => {
+      const plain = row.toJSON();
+      const allocs = plain.costAllocations || [];
+      const purchaseCost = allocs.length
+        ? allocs.reduce(
+            (sum, alloc) => decimal.addMoney(sum, alloc.totalCost),
+            decimal.money(0),
+          )
+        : decimal.lineTotal(plain.quantity, 0, 0);
+      const revenue = decimal.money(plain.totalPrice);
+      const profit = decimal.subMoney(revenue, purchaseCost);
+      return {
+        id: plain.id,
+        saleId: plain.sale.id,
+        date: dateKey(plain.sale.saleDate),
+        document: plain.sale.invoiceNumber,
+        customer: plain.sale.customer?.name || plain.sale.customerName || "Walk-in",
+        store: plain.sale.warehouse?.name,
+        warehouseId: plain.sale.warehouseId,
+        salesperson: plain.sale.creator?.fullName || plain.sale.creator?.username,
+        quantity: plain.quantity,
+        sellingPrice: plain.unitPrice,
+        totalSaleAmount: revenue,
+        purchaseCost,
+        profit,
+        allocations: allocs.map((alloc) => ({
+          stockBatchId: alloc.stockBatchId,
+          quantity: alloc.quantity,
+          unitCost: alloc.unitCost,
+          totalCost: alloc.totalCost,
+          purchaseDate: alloc.stockBatch?.purchaseDate || null,
+          costingMethod: alloc.costingMethod,
+        })),
+      };
+    });
+
+  const txWhere = { productId: id };
+  tenant.applyCompany(txWhere, user);
+  tenant.applyWarehouse(txWhere, user);
+  if (query.warehouseId) txWhere.warehouseId = query.warehouseId;
+  if (query.from || query.to) {
+    txWhere.createdAt = {};
+    if (query.from) txWhere.createdAt[Op.gte] = query.from;
+    if (query.to) txWhere.createdAt[Op.lte] = query.to;
+  }
+  const txRows = await StockTransaction.findAll({
+    where: txWhere,
+    include: [
+      { model: Warehouse, as: "warehouse", attributes: ["id", "name", "code"] },
+      { model: User, as: "creator", attributes: ["id", "fullName", "username"] },
+    ],
+    order: [["createdAt", "DESC"]],
+    limit: 200,
+  });
+
+  const saleIds = [
+    ...new Set(
+      txRows
+        .filter((row) => row.type === "SALE" && row.referenceType === "SALE")
+        .map((row) => row.referenceId),
+    ),
+  ];
+  const allocBySale = {};
+  if (saleIds.length) {
+    const allocs = await SaleCostAllocation.findAll({
+      where: { saleId: { [Op.in]: saleIds }, saleItemId: { [Op.ne]: null } },
+      include: [
+        {
+          model: SaleItem,
+          as: "saleItem",
+          attributes: ["productId"],
+          required: true,
+          where: { productId: id },
+        },
+        {
+          model: StockBatch,
+          as: "stockBatch",
+          attributes: ["id", "purchaseDate", "unitCost", "sourceType"],
+        },
+      ],
+    });
+    for (const alloc of allocs) {
+      const list = allocBySale[alloc.saleId] || [];
+      list.push(alloc);
+      allocBySale[alloc.saleId] = list;
+    }
+  }
+
+  const stock = txRows.flatMap((row) => {
+    const plain = row.toJSON();
+    const inbound = !String(plain.type).includes("OUT") && plain.type !== "SALE";
+    const base = {
+      id: plain.id,
+      date: dateKey(plain.createdAt),
+      type: plain.type,
+      quantity: inbound ? `+${plain.quantity}` : `-${plain.quantity}`,
+      unitCost: plain.unitCost,
+      store: plain.warehouse?.name,
+      notes: plain.notes,
+      createdAt: plain.createdAt,
+    };
+    const allocs = allocBySale[plain.referenceId] || [];
+    if (plain.type === "SALE" && allocs.length) {
+      return allocs.map((alloc) => ({
+        ...base,
+        quantity: `-${alloc.quantity}`,
+        unitCost: alloc.unitCost,
+        fromPurchase: alloc.stockBatch?.purchaseDate
+          ? dateKey(alloc.stockBatch.purchaseDate)
+          : null,
+      }));
+    }
+    return [base];
+  });
+
+  return {
+    product: productRepository.toPublic(product),
+    purchases,
+    sales,
+    stock,
+  };
 };

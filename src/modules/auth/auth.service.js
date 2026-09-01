@@ -121,11 +121,20 @@ exports.registerCompany = async (payload) => {
       { transaction },
     );
     await models.PaymentMethod.bulkCreate(
-      ["CASH", "CARD", "BANK_TRANSFER", "MOBILE_MONEY", "CREDIT"].map((name) => ({
+      ["CBE", "TELEBIRR", "ABYSSINIA BANK "].map((name) => ({
         name,
         status: "ACTIVE",
         companyId: company.id,
       })),
+      { transaction },
+    );
+    await models.Warehouse.create(
+      {
+        name: "Main store",
+        code: `MAIN-${String(company.id).replace(/-/g, "").slice(0, 8).toUpperCase()}`,
+        companyId: company.id,
+        status: "ACTIVE",
+      },
       { transaction },
     );
     return user.id;

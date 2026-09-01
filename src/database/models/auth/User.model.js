@@ -189,6 +189,13 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: "CASCADE",
     });
 
+    User.hasMany(models.CustomerWalletTransaction, {
+      foreignKey: "recordedBy",
+      as: "walletTransactions",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
     User.hasMany(models.SupplierPayment, {
       foreignKey: "recordedBy",
       as: "supplierPayments",
@@ -206,6 +213,13 @@ module.exports = (sequelize, DataTypes) => {
     User.hasMany(models.Expense, {
       foreignKey: "createdBy",
       as: "expenses",
+      onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    User.hasMany(models.OtherIncome, {
+      foreignKey: "createdBy",
+      as: "otherIncomes",
       onDelete: "RESTRICT",
       onUpdate: "CASCADE",
     });

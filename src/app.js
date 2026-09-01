@@ -4,6 +4,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
+const fs = require("fs");
 const path = require("path");
 const AppError = require("./shared/errors/AppError");
 const env = require("./config/env");
@@ -14,6 +15,7 @@ const modules = require("./modules");
 const errorHandler = require("./shared/middlewares/error.middleware");
 
 const app = express();
+app.set("trust proxy", 1);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -26,20 +28,33 @@ if (env.FRONTEND_URL && !allowedOrigins.includes(env.FRONTEND_URL)) {
   allowedOrigins.push(env.FRONTEND_URL);
 }
 if (env.NODE_ENV === "production" && allowedOrigins.includes("*")) {
-  console.error(
-    "❌ ALLOWED_ORIGINS must be an explicit origin list in production — cookie-based auth cannot use credentials with a wildcard origin.",
+  console.warn(
+    "ALLOWED_ORIGINS is * in production. Set it to your frontend origin(s) if cookies fail.",
   );
-  process.exit(1);
 }
+
+const originHostname = (value) => {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return "";
+  }
+};
 
 const isDevLoopbackOrigin = (origin) => {
   if (env.NODE_ENV === "production") return false;
-  try {
-    const { hostname } = new URL(origin);
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-  } catch {
-    return false;
-  }
+  const hostname = originHostname(origin);
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+};
+
+const isSameSiteFamily = (origin) => {
+  const host = originHostname(origin);
+  const apiHost =
+    originHostname(env.APP_URL || "") || originHostname(env.FRONTEND_URL || "");
+  if (!host || !apiHost) return false;
+  const root = apiHost.split(".").slice(-2).join(".");
+  if (!root || !root.includes(".")) return host === apiHost;
+  return host === apiHost || host.endsWith(`.${root}`) || apiHost.endsWith(`.${root}`);
 };
 
 app.use(
@@ -49,7 +64,8 @@ app.use(
       if (
         allowedOrigins.includes("*") ||
         allowedOrigins.includes(origin) ||
-        isDevLoopbackOrigin(origin)
+        isDevLoopbackOrigin(origin) ||
+        isSameSiteFamily(origin)
       ) {
         return callback(null, origin);
       }
@@ -59,12 +75,22 @@ app.use(
   }),
 );
 
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false,
+  }),
+);
 app.use(morgan("dev"));
 
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
-app.get("/", (req, res) => {
+const clientDist = path.join(process.cwd(), "client", "dist");
+const clientIndex = path.join(clientDist, "index.html");
+const hasClientBuild = fs.existsSync(clientIndex);
+
+app.get("/", (req, res, next) => {
+  if (hasClientBuild) return next();
   res.status(200).json({
     status: "OK",
     message: "Server is running 🚀",
@@ -86,6 +112,7 @@ app.get("/health", async (req, res) => {
       status: "OK",
       server: "running",
       db: "connected",
+      appName: env.APP_NAME,
       uptime: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
     });
@@ -101,6 +128,23 @@ app.get("/health", async (req, res) => {
     });
   }
 });
+
+if (hasClientBuild) {
+  app.use(express.static(clientDist));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (
+      req.path.startsWith("/api") ||
+      req.path.startsWith("/uploads") ||
+      req.path === "/health"
+    ) {
+      return next();
+    }
+    res.sendFile(clientIndex, (err) => {
+      if (err) next(err);
+    });
+  });
+}
 
 app.use((req, res, next) => {
   next(AppError.notFound(`Route ${req.originalUrl} not found`));

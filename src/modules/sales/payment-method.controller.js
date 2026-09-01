@@ -35,9 +35,13 @@ const toPublic = (row) => {
 };
 
 exports.list = catchAsync(async (req, res) => {
+  const { Op } = require("sequelize");
+  const companyId = tenant.companyIdOf(req.user);
   const where = {};
-  tenant.applyCompany(where, req.user);
   if (req.query.status) where.status = req.query.status;
+  if (companyId) {
+    where[Op.or] = [{ companyId }, { companyId: null }];
+  }
   const rows = await PaymentMethod.findAll({ where, order: [["name", "ASC"]] });
   sendSuccess(res, {
     data: { paymentMethods: rows.map(toPublic) },

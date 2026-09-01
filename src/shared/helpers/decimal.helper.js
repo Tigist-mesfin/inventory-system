@@ -83,6 +83,14 @@ const weightedAverage = (onHandQty, onHandCost, inboundQty, inboundCost) => {
   return fromScaled(avg, MONEY_SCALE);
 };
 
+const percentOf = (amount, percent) => {
+  const cents = toScaled(amount, MONEY_SCALE);
+  const pct = toScaled(percent, MONEY_SCALE);
+  const denom = 100n * 10n ** BigInt(MONEY_SCALE);
+  const result = (cents * pct + denom / 2n) / denom;
+  return fromScaled(result, MONEY_SCALE);
+};
+
 module.exports = {
   QTY_SCALE,
   MONEY_SCALE,
@@ -100,4 +108,5 @@ module.exports = {
   available,
   lineTotal,
   weightedAverage,
+  percentOf,
 };

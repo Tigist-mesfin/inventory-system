@@ -7,6 +7,29 @@ exports.chat = catchAsync(async (req, res) => {
   sendSuccess(res, { data: { chat: result }, message: "AI answer ready" });
 });
 
+exports.clarify = catchAsync(async (req, res) => {
+  const result = await aiService.clarify(req.body, req.user);
+  sendSuccess(res, {
+    data: { clarify: result },
+    message: "Clarified question candidates ready",
+  });
+});
+
+exports.dailySummary = catchAsync(async (req, res) => {
+  const summary = await aiService.dailySummary(req.query, req.user);
+  sendSuccess(res, { data: { summary }, message: "Daily AI summary ready" });
+});
+
+exports.monthlySummary = catchAsync(async (req, res) => {
+  const summary = await aiService.monthlySummary(req.query, req.user);
+  sendSuccess(res, { data: { summary }, message: "Monthly AI summary ready" });
+});
+
+exports.insightBoard = catchAsync(async (req, res) => {
+  const board = await aiService.insightBoard(req.query, req.user);
+  sendSuccess(res, { data: { board }, message: "AI insights ready" });
+});
+
 exports.dashboard = catchAsync(async (req, res) => {
   const dashboard = await aiService.dashboard(req.query, req.user);
   sendSuccess(res, { data: { dashboard }, message: "AI dashboard retrieved" });

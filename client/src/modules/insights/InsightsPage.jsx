@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, money } from "../../api/client";
+import InventoryLoading from "../../components/InventoryLoading";
 
 export default function InsightsPage() {
   const [data, setData] = useState(null);
@@ -8,7 +9,7 @@ export default function InsightsPage() {
     api("/api/insights/dashboard").then((res) => setData(res.data.dashboard));
   }, []);
 
-  if (!data) return <p className="muted">Loading insights…</p>;
+  if (!data) return <InventoryLoading message="Loading inventory..." />;
 
   return (
     <>
@@ -17,8 +18,8 @@ export default function InsightsPage() {
       <section className="card">
         <h3>Salesperson performance</h3>
         {data.salespersonPerformance.map((row) => (
-          <div key={row.user.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
-            <strong>{row.user.fullName}</strong>
+          <div key={row.user?.id || row.userId} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
+            <strong>{row.user?.fullName || "Unknown"}</strong>
             <span>{row.invoiceCount} invoices · {money(row.totalAmount)}</span>
           </div>
         ))}

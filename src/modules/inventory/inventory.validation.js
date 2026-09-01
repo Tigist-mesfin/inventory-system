@@ -4,7 +4,7 @@ const uuid = () => Joi.string().uuid({ version: "uuidv4" });
 
 exports.listQuerySchema = Joi.object({
   page: Joi.number().integer().min(1),
-  limit: Joi.number().integer().min(1).max(200),
+  limit: Joi.number().integer().min(1).max(500),
   search: Joi.string().trim().max(128).allow(""),
   warehouseId: uuid(),
   productId: uuid(),
@@ -16,6 +16,18 @@ exports.listQuerySchema = Joi.object({
   to: Joi.date().iso(),
 });
 
+exports.lotsQuerySchema = Joi.object({
+  productId: uuid().required(),
+  warehouseId: uuid().required(),
+  quantity: Joi.number().min(0.001).precision(3),
+});
+
 exports.idParamSchema = Joi.object({
   id: uuid().required(),
+});
+
+exports.adjustOnHandSchema = Joi.object({
+  productId: uuid().required(),
+  warehouseId: uuid().required(),
+  quantity: Joi.number().min(0).precision(3).required(),
 });

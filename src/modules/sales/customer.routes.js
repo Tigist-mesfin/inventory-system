@@ -15,15 +15,30 @@ const {
   updateSchema,
   pricesSchema,
   paymentSchema,
+  walletRechargeSchema,
+  walletListQuerySchema,
 } = require("./customer.validation");
 
 router.use(authenticate);
 
 router.get(
   "/",
-  authorizePermission("customers", "READ"),
+  authorizePermission("customers:READ", "sales:READ"),
   validateQuery(listQuerySchema),
   controller.list,
+);
+
+router.get(
+  "/wallets",
+  authorizePermission("customers", "READ"),
+  controller.listWallets,
+);
+
+router.get(
+  "/wallet-transactions",
+  authorizePermission("customers", "READ"),
+  validateQuery(walletListQuerySchema),
+  controller.listWalletTransactions,
 );
 
 router.get(
@@ -69,6 +84,14 @@ router.post(
   validateParams(idParamSchema),
   validateBody(paymentSchema),
   controller.recordPayment,
+);
+
+router.post(
+  "/:id/wallet",
+  authorizePermission("customers", "CREATE"),
+  validateParams(idParamSchema),
+  validateBody(walletRechargeSchema),
+  controller.rechargeWallet,
 );
 
 module.exports = router;

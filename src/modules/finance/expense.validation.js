@@ -7,10 +7,21 @@ const CATEGORIES = [
   "SALARY",
   "UTILITIES",
   "TRANSPORT",
-  "MARKETING",
+  "FUEL",
   "MAINTENANCE",
   "OFFICE",
+  "MARKETING",
+  "BANK_FEES",
   "TAX",
+  "INSURANCE",
+  "EQUIPMENT",
+  "DIGITAL",
+  "PACKAGING",
+  "SHIPPING",
+  "LEGAL_ACCOUNTING",
+  "CLEANING",
+  "SECURITY",
+  "INTEREST_FINANCE",
   "OTHER",
 ];
 
@@ -21,6 +32,8 @@ const PERIODS = [
   "last_month",
   "this_year",
   "custom",
+  "all_time",
+  "all",
 ];
 
 exports.CATEGORIES = CATEGORIES;
@@ -33,6 +46,7 @@ exports.listQuerySchema = Joi.object({
   to: Joi.date().iso(),
   category: Joi.string()
     .valid(...CATEGORIES),
+  paymentMethod: Joi.string().trim().max(64).allow(""),
   search: Joi.string().trim().max(128).allow(""),
 });
 
@@ -42,6 +56,7 @@ exports.reportQuerySchema = Joi.object({
   to: Joi.date().iso(),
   category: Joi.string()
     .valid(...CATEGORIES),
+  paymentMethod: Joi.string().trim().max(64).allow(""),
 });
 
 exports.incomeQuerySchema = Joi.object({

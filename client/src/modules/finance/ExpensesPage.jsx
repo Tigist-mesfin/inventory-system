@@ -1,17 +1,30 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, money } from "../../api/client";
 import { can } from "../../auth/access";
 import { useAuth } from "../../auth/AuthContext";
+import InventoryLoading from "../../components/InventoryLoading";
 
 const CATEGORIES = [
-  { value: "RENT", label: "Rent" },
-  { value: "SALARY", label: "Salaries" },
+  { value: "RENT", label: "Rent & Lease" },
+  { value: "SALARY", label: "Salaries & Wages" },
   { value: "UTILITIES", label: "Utilities" },
-  { value: "TRANSPORT", label: "Transport" },
-  { value: "MARKETING", label: "Marketing" },
-  { value: "MAINTENANCE", label: "Maintenance" },
-  { value: "OFFICE", label: "Office" },
-  { value: "TAX", label: "Tax" },
+  { value: "TRANSPORT", label: "Transportation" },
+  { value: "FUEL", label: "Fuel" },
+  { value: "MAINTENANCE", label: "Maintenance & Repairs" },
+  { value: "OFFICE", label: "Office Supplies" },
+  { value: "MARKETING", label: "Marketing & Advertising" },
+  { value: "BANK_FEES", label: "Bank & Payment Fees" },
+  { value: "TAX", label: "Taxes & Government Fees" },
+  { value: "INSURANCE", label: "Insurance" },
+  { value: "EQUIPMENT", label: "Equipment & Tools" },
+  { value: "DIGITAL", label: "Software & Subscriptions" },
+  { value: "PACKAGING", label: "Packaging Materials" },
+  { value: "SHIPPING", label: "Shipping & Delivery" },
+  { value: "LEGAL_ACCOUNTING", label: "Legal & Accounting" },
+  { value: "CLEANING", label: "Cleaning & Sanitation" },
+  { value: "SECURITY", label: "Security" },
+  { value: "INTEREST_FINANCE", label: "Interest & Finance Costs" },
   { value: "OTHER", label: "Other" },
 ];
 
@@ -44,31 +57,43 @@ export default function ExpensesPage() {
   const [from, setFrom] = useState(todayIso());
   const [to, setTo] = useState(todayIso());
   const [category, setCategory] = useState("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
+  const [methods, setMethods] = useState([]);
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = async (nextPeriod = period) => {
+  const load = async (
+    nextPeriod = period,
+    nextCategory = category,
+    nextMethod = paymentMethodFilter,
+  ) => {
     const query = { period: nextPeriod };
     if (nextPeriod === "custom") {
       query.from = from;
       query.to = to;
     }
-    if (category) query.category = category;
+    if (nextCategory) query.category = nextCategory;
+    if (nextMethod) query.paymentMethod = nextMethod;
     const res = await api("/api/expenses/report", { query });
     setReport(res.data.report);
   };
 
-  const pickPeriod = (value) => {
-    setPeriod(value);
-    if (value !== "custom") {
-      load(value).catch((err) => setError(err.message));
-    }
-  };
+  useEffect(() => {
+    api("/api/payment-methods", { query: { status: "ACTIVE" } })
+      .then((res) => setMethods(res.data.paymentMethods || res.data.methods || []))
+      .catch(() => setMethods([]));
+    load().catch((err) => setError(err.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
-  }, []);
+    if (period === "custom") return;
+    load(period, category, paymentMethodFilter).catch((err) =>
+      setError(err.message),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, category, paymentMethodFilter]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -105,13 +130,22 @@ export default function ExpensesPage() {
     }
   };
 
+  if (!report && !error) {
+    return <InventoryLoading message="Loading expenses..." />;
+  }
+
+  const lines = report?.expenses || [];
+
   return (
     <>
       <div className="topbar">
         <div>
           <h1 style={{ margin: 0 }}>Expenses</h1>
-          <p className="muted">Record operating costs and see totals by date.</p>
+          <p className="muted">Record operating costs and filter the list by date or category.</p>
         </div>
+        <Link className="btn secondary" to="/other-income">
+          Other income
+        </Link>
       </div>
 
       {can(user, "finance", "CREATE") ? (
@@ -135,7 +169,9 @@ export default function ExpensesPage() {
                 required
               >
                 {CATEGORIES.map((row) => (
-                  <option key={row.value} value={row.value}>{row.label}</option>
+                  <option key={row.value} value={row.value}>
+                    {row.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -160,12 +196,30 @@ export default function ExpensesPage() {
               />
             </label>
             <label className="field">
-              <span>Paid with <em>(optional)</em></span>
-              <input
-                value={form.paymentMethod}
-                onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
-                placeholder="Cash, Telebirr…"
-              />
+              <span>Paid with</span>
+              {methods.length ? (
+                <select
+                  value={form.paymentMethod}
+                  onChange={(e) =>
+                    setForm({ ...form, paymentMethod: e.target.value })
+                  }
+                >
+                  <option value="">Choose method</option>
+                  {methods.map((row) => (
+                    <option key={row.id || row.name} value={row.name}>
+                      {row.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={form.paymentMethod}
+                  onChange={(e) =>
+                    setForm({ ...form, paymentMethod: e.target.value })
+                  }
+                  placeholder="Cash, Telebirr…"
+                />
+              )}
             </label>
           </div>
           {error ? <p className="error">{error}</p> : null}
@@ -173,136 +227,136 @@ export default function ExpensesPage() {
             {busy ? "Saving…" : "Save expense"}
           </button>
         </form>
-      ) : error ? <p className="error">{error}</p> : null}
+      ) : error ? (
+        <p className="error">{error}</p>
+      ) : null}
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2 style={{ marginTop: 0 }}>Expense report by date</h2>
-        <div className="period-row">
+        <div className="toolbar" style={{ marginBottom: 14 }}>
+          <label className="field">
+            <span>Category</span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {CATEGORIES.map((row) => (
+                <option key={row.value} value={row.value}>
+                  {row.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Payment method</span>
+            <select
+              value={paymentMethodFilter}
+              onChange={(e) => setPaymentMethodFilter(e.target.value)}
+            >
+              <option value="">All methods</option>
+              {methods.map((row) => (
+                <option key={row.id || row.name} value={row.name}>
+                  {row.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Start date</span>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => {
+                setFrom(e.target.value);
+                setPeriod("custom");
+              }}
+            />
+          </label>
+          <label className="field">
+            <span>End date</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => {
+                setTo(e.target.value);
+                setPeriod("custom");
+              }}
+            />
+          </label>
+        </div>
+
+        <div className="period-row" style={{ marginBottom: 14 }}>
           {PERIODS.map((row) => (
             <button
               key={row.value}
               type="button"
               className={`period-chip${period === row.value ? " active" : ""}`}
-              onClick={() => pickPeriod(row.value)}
+              onClick={() => setPeriod(row.value)}
             >
               {row.label}
             </button>
           ))}
         </div>
+
         {period === "custom" ? (
-          <div className="catalog-fields" style={{ marginTop: 12 }}>
-            <label className="field">
-              <span>From</span>
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>To</span>
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            </label>
-          </div>
+          <button
+            type="button"
+            className="btn"
+            style={{ marginBottom: 14 }}
+            onClick={() =>
+              load("custom", category, paymentMethodFilter).catch((err) =>
+                setError(err.message),
+              )
+            }
+          >
+            Show
+          </button>
         ) : null}
-        <div className="catalog-fields" style={{ marginTop: 12 }}>
-          <label className="field">
-            <span>Category filter</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">All categories</option>
-              {CATEGORIES.map((row) => (
-                <option key={row.value} value={row.value}>{row.label}</option>
+
+        <p className="muted" style={{ marginTop: 0 }}>
+          {report?.period?.label || "Period"}: {money(report?.totals?.amount)} ETB
+          {" · "}
+          {report?.totals?.count || 0} expenses
+        </p>
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Payment method</th>
+                <th>Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((row) => (
+                <tr key={row.id}>
+                  <td>{String(row.expenseDate).slice(0, 10)}</td>
+                  <td>{categoryLabel(row.category)}</td>
+                  <td>{row.description}</td>
+                  <td>{row.paymentMethod || "—"}</td>
+                  <td>{money(row.amount)} ETB</td>
+                  <td>
+                    {can(user, "finance", "DELETE") ? (
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => remove(row)}
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
               ))}
-            </select>
-          </label>
+            </tbody>
+          </table>
         </div>
-        <button
-          type="button"
-          className="btn"
-          style={{ marginTop: 12 }}
-          onClick={() => load().catch((err) => setError(err.message))}
-        >
-          Show report
-        </button>
-
-        {report ? (
-          <>
-            <p className="muted" style={{ marginTop: 16 }}>
-              {report.period?.label}: {money(report.totals?.amount)} across {report.totals?.count || 0} expenses
-            </p>
-            <h3>By date</h3>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Count</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(report.byDate || []).map((row) => (
-                    <tr key={row.date}>
-                      <td>{row.date}</td>
-                      <td>{row.count}</td>
-                      <td>{money(row.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {(report.byDate || []).length === 0 ? <p className="empty muted">No expenses in this period.</p> : null}
-
-            <h3>By category</h3>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th>Count</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(report.byCategory || []).map((row) => (
-                    <tr key={row.category}>
-                      <td>{categoryLabel(row.category)}</td>
-                      <td>{row.count}</td>
-                      <td>{money(row.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <h3>All entries</h3>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Category</th>
-                    <th>Description</th>
-                    <th>Amount</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(report.expenses || []).map((row) => (
-                    <tr key={row.id}>
-                      <td>{String(row.expenseDate).slice(0, 10)}</td>
-                      <td>{categoryLabel(row.category)}</td>
-                      <td>{row.description}</td>
-                      <td>{money(row.amount)}</td>
-                      <td>
-                        {can(user, "finance", "DELETE") ? (
-                          <button type="button" className="btn danger" onClick={() => remove(row)}>
-                            Delete
-                          </button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+        {lines.length === 0 ? (
+          <p className="empty muted">No expenses for these filters.</p>
         ) : null}
       </section>
     </>

@@ -37,6 +37,7 @@ router.use("/payment-methods", require("./sales/payment-method.routes"));
 router.use("/shop", require("./shop/shop.routes"));
 router.use("/insights", require("./insights/insights.routes"));
 router.use("/expenses", require("./finance/expense.routes"));
+router.use("/other-incomes", require("./finance/other-income.routes"));
 router.use("/ai", require("./ai/ai.routes"));
 router.use("/company-profile", require("./system/company.routes"));
 

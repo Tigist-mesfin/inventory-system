@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, money } from "../../api/client";
+import InventoryLoading from "../../components/InventoryLoading";
 
 const TYPE_LABEL = {
   CUSTOMER: "Customer",
@@ -11,6 +13,7 @@ export default function CustomersPage() {
   const [form, setForm] = useState({ name: "", phone: "", location: "", type: "CUSTOMER" });
   const [payment, setPayment] = useState({ partyId: "", amount: "", method: "CASH" });
   const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
 
   const load = () =>
     api("/api/customers")
@@ -18,8 +21,10 @@ export default function CustomersPage() {
       .catch((err) => setError(err.message));
 
   useEffect(() => {
-    load();
+    load().finally(() => setReady(true));
   }, []);
+
+  if (!ready) return <InventoryLoading message="Loading inventory..." />;
 
   return (
     <>
@@ -27,9 +32,12 @@ export default function CustomersPage() {
         <div>
           <h1 style={{ margin: 0 }}>Customers & suppliers</h1>
           <p className="muted">
-            Register with name, phone, address, and type. Sales use customers, purchases use suppliers, debit uses both.
+            Register customers and suppliers with name, phone, and address. Recharge wallets, then deduct on a sale or take a direct payment.
           </p>
         </div>
+        <Link className="btn saffron" to="/customers/wallets">
+          Customer wallets
+        </Link>
       </div>
       {error ? <p className="error">{error}</p> : null}
       <form
@@ -132,6 +140,7 @@ export default function CustomersPage() {
               <th>Name</th>
               <th>Type</th>
               <th>Address</th>
+              <th>Wallet</th>
               <th>Remaining</th>
             </tr>
           </thead>
@@ -144,6 +153,7 @@ export default function CustomersPage() {
                 </td>
                 <td>{TYPE_LABEL[c.type] || c.type}</td>
                 <td>{c.location || "—"}</td>
+                <td>{c.type === "CUSTOMER" ? `${money(c.walletBalance)} ETB` : "—"}</td>
                 <td>
                   <strong>{money(c.debt)}</strong>
                   <div className="muted">
