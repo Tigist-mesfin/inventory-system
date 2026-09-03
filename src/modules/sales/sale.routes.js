@@ -20,6 +20,7 @@ const {
   completeSchema,
   paySchema,
   reviseSchema,
+  syncSchema,
 } = require("./sale.validation");
 
 const quoteQuerySchema = Joi.object({
@@ -75,6 +76,13 @@ router.post(
   authorizePermission("sales", "CREATE"),
   excelUpload,
   controller.importFromExcel,
+);
+
+router.post(
+  "/sync",
+  authorizePermission("sales", "CREATE"),
+  validateBody(syncSchema),
+  controller.sync,
 );
 
 router.get(

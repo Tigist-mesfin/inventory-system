@@ -31,6 +31,11 @@ exports.create = catchAsync(async (req, res) => {
   });
 });
 
+exports.sync = catchAsync(async (req, res) => {
+  const sale = await saleService.sync(req.body, req.user);
+  sendSuccess(res, { data: { sale }, message: "Sale synchronized" });
+});
+
 exports.update = catchAsync(async (req, res) => {
   const sale = await saleService.update(req.params.id, req.body, req.user);
   sendSuccess(res, { data: { sale }, message: "Sale updated" });

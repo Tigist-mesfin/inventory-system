@@ -117,6 +117,17 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(64),
         allowNull: true,
       },
+
+      clientTransactionId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
+      sourceMode: {
+        type: DataTypes.ENUM("ONLINE", "OFFLINE"),
+        allowNull: false,
+        defaultValue: "ONLINE",
+      },
     },
     {
       tableName: "purchase_orders",
@@ -126,6 +137,7 @@ module.exports = (sequelize, DataTypes) => {
         { fields: ["createdBy"] },
         { fields: ["status"] },
         { fields: ["orderDate"] },
+        { fields: ["companyId", "clientTransactionId"], unique: true },
       ],
     },
   );

@@ -3,6 +3,7 @@ const Joi = require("joi");
 const uuid = () => Joi.string().uuid({ version: "uuidv4" });
 const money = Joi.number().min(0).precision(2);
 const qty = Joi.number().min(0.001).precision(3);
+const sourceMode = Joi.string().valid("ONLINE", "OFFLINE");
 
 const itemSchema = Joi.object({
   productId: uuid().required(),
@@ -46,6 +47,8 @@ exports.createSchema = Joi.object({
   discountAmount: money,
   notes: Joi.string().trim().max(4000).allow("", null),
   channel: Joi.string().trim().max(32).allow("", null),
+  clientTransactionId: uuid(),
+  sourceMode,
   items: Joi.array().items(itemSchema).min(1).required(),
 });
 
@@ -112,3 +115,10 @@ exports.updateSchema = Joi.object({
   notes: Joi.string().trim().max(4000).allow("", null),
   items: Joi.array().items(itemSchema).min(1),
 }).min(1);
+
+exports.syncSchema = exports.createSchema.keys({
+  clientTransactionId: uuid().required(),
+  paidAmount: money.allow(0, "", null),
+  payFrom: Joi.string().valid("WALLET", "DIRECT"),
+  costingMethod: Joi.string().valid("SIMPLE", "FIFO", "MANUAL"),
+});

@@ -21,6 +21,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Apache/LiteSpeed on cPanel often drops Authorization; mobile sends X-Access-Token too.
+app.use((req, _res, next) => {
+  if (!req.headers.authorization && req.headers["x-access-token"]) {
+    const token = String(req.headers["x-access-token"]).trim();
+    if (token) req.headers.authorization = `Bearer ${token}`;
+  }
+  next();
+});
+
 const allowedOrigins = env.ALLOWED_ORIGINS.split(",")
   .map((s) => s.trim())
   .filter(Boolean);

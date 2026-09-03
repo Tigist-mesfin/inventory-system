@@ -119,6 +119,8 @@ bower_components/
 !client/.env.example
 !client/.env.development
 !client/.env.production
+!mobile/.env.example
+mobile/.env
 
 # ==========================================
 # IDE / Editors

@@ -152,6 +152,8 @@ const toPublic = (sale) => {
     paymentMethod: plain.paymentMethod,
     status: plain.status,
     notes: plain.notes,
+    clientTransactionId: plain.clientTransactionId || null,
+    sourceMode: plain.sourceMode || "ONLINE",
     warehouse: plain.warehouse || null,
     creator: plain.creator || null,
     customer: plain.customer || null,
@@ -230,6 +232,15 @@ exports.findAndCount = async ({ where, limit, offset }) => {
 
 exports.findById = async (id, transaction) =>
   Sale.findByPk(id, { include, transaction });
+
+exports.findByClientTransactionId = async (clientTransactionId, companyId, transaction) => {
+  if (!clientTransactionId) return null;
+  return Sale.findOne({
+    where: { clientTransactionId, companyId },
+    include,
+    transaction,
+  });
+};
 
 exports.findByIdForUpdate = async (id, transaction) =>
   Sale.findByPk(id, {

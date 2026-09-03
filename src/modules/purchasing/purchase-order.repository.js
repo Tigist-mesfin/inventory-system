@@ -56,6 +56,8 @@ const toPublic = (row) => {
           : "PARTIAL",
     status: plain.status,
     notes: plain.notes,
+    clientTransactionId: plain.clientTransactionId || null,
+    sourceMode: plain.sourceMode || "ONLINE",
     supplier: plain.supplier || null,
     creator: plain.creator || null,
     items: (plain.items || []).map((item) => ({
@@ -116,6 +118,15 @@ exports.findAndCount = async ({ where, limit, offset }) => {
 
 exports.findById = async (id, transaction) =>
   PurchaseOrder.findByPk(id, { include, transaction });
+
+exports.findByClientTransactionId = async (clientTransactionId, companyId, transaction) => {
+  if (!clientTransactionId) return null;
+  return PurchaseOrder.findOne({
+    where: { clientTransactionId, companyId },
+    include,
+    transaction,
+  });
+};
 
 exports.findByIdForUpdate = async (id, transaction) =>
   PurchaseOrder.findByPk(id, {

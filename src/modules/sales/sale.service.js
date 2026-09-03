@@ -31,6 +31,9 @@ const emptyToNull = (value) => {
   return value;
 };
 
+const normalizeSourceMode = (value) =>
+  String(value || "ONLINE").toUpperCase() === "OFFLINE" ? "OFFLINE" : "ONLINE";
+
 const withShare = (sale) => {
   if (!sale) return sale;
   return {
@@ -323,6 +326,14 @@ exports.getPublicInvoice = async (token) => {
 
 exports.create = async (payload, user) => {
   const userId = user.id;
+  const companyId = tenant.companyIdOf(user);
+  if (payload.clientTransactionId) {
+    const existing = await saleRepository.findByClientTransactionId(
+      payload.clientTransactionId,
+      companyId,
+    );
+    if (existing) return saleRepository.toPublic(existing);
+  }
   tenant.assertWarehouseAccess(user, payload.warehouseId);
   await assertWarehouse(payload.warehouseId, user);
   const customer = await assertCustomer(payload.customerId || null, user);
@@ -356,6 +367,8 @@ exports.create = async (payload, user) => {
         paymentMethod: payload.paymentMethod,
         status: "DRAFT",
         notes: emptyToNull(payload.notes) ?? null,
+        clientTransactionId: payload.clientTransactionId || null,
+        sourceMode: normalizeSourceMode(payload.sourceMode),
       },
       transaction,
     );
@@ -917,4 +930,39 @@ exports.importFromExcel = async (buffer, user) => {
     imported,
     skipped,
   };
+};
+
+exports.sync = async (payload, user) => {
+  const companyId = tenant.companyIdOf(user);
+  const existing = await saleRepository.findByClientTransactionId(
+    payload.clientTransactionId,
+    companyId,
+  );
+  if (existing?.status === "COMPLETED") {
+    return saleRepository.toPublic(existing);
+  }
+
+  const completeExtras = {
+    paidAmount: payload.paidAmount,
+    payFrom: payload.payFrom || "DIRECT",
+    paymentMethod: payload.paymentMethod,
+    costingMethod: payload.costingMethod || "SIMPLE",
+    items: (payload.items || []).map((item) => ({
+      productId: item.productId,
+      costingMethod: payload.costingMethod || "SIMPLE",
+    })),
+  };
+
+  if (existing?.status === "DRAFT") {
+    return exports.complete(existing.id, user, completeExtras);
+  }
+
+  const created = await exports.create(
+    {
+      ...payload,
+      sourceMode: normalizeSourceMode(payload.sourceMode),
+    },
+    user,
+  );
+  return exports.complete(created.id, user, completeExtras);
 };

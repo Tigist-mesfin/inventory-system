@@ -13,7 +13,11 @@ exports.registerCompany = catchAsync(async (req, res) => {
     refreshToken: result.refreshToken,
   });
   sendSuccess(res, {
-    data: { user: result.user },
+    data: {
+      user: result.user,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    },
     message: "Company registered",
     statusCode: 201,
   });
@@ -26,16 +30,21 @@ exports.login = catchAsync(async (req, res) => {
     refreshToken: result.refreshToken,
   });
   sendSuccess(res, {
-    data: { user: result.user },
+    data: {
+      user: result.user,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    },
     message: "Logged in successfully",
   });
 });
 
 exports.refresh = catchAsync(async (req, res) => {
-  const result = await authService.refresh(req.cookies?.refreshToken);
+  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  const result = await authService.refresh(refreshToken);
   setAuthCookies(res, { accessToken: result.accessToken });
   sendSuccess(res, {
-    data: null,
+    data: { accessToken: result.accessToken },
     message: "Token refreshed",
   });
 });

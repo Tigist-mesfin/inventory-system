@@ -3,6 +3,7 @@ const Joi = require("joi");
 const uuid = () => Joi.string().uuid({ version: "uuidv4" });
 const money = Joi.number().min(0).precision(2);
 const qty = Joi.number().min(0.001).precision(3);
+const sourceMode = Joi.string().valid("ONLINE", "OFFLINE");
 
 const itemSchema = Joi.object({
   productId: uuid().required(),
@@ -54,6 +55,8 @@ exports.createSchema = Joi.object({
   notes: Joi.string().trim().max(4000).allow("", null),
   paymentMethod: Joi.string().trim().max(64).required(),
   paidAmount: money,
+  clientTransactionId: uuid(),
+  sourceMode,
   items: Joi.array().items(itemSchema).min(1).required(),
 }).or("supplierId", "walkInName");
 

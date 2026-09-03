@@ -54,8 +54,22 @@ const userAccessInclude = [
  * Authenticate via httpOnly accessToken cookie.
  * Loads User with active Role and active Permissions for RBAC checks.
  */
+const readAccessToken = (req) => {
+  if (req.cookies?.accessToken) return req.cookies.accessToken;
+  const header = req.headers?.authorization;
+  if (typeof header === "string" && header.startsWith("Bearer ")) {
+    return header.slice(7).trim();
+  }
+  // Mobile + cPanel/Apache fallback when Authorization header is stripped.
+  const xToken = req.headers["x-access-token"];
+  if (typeof xToken === "string" && xToken.trim()) {
+    return xToken.trim();
+  }
+  return null;
+};
+
 const authenticate = catchAsync(async (req, res, next) => {
-  const token = req.cookies?.accessToken;
+  const token = readAccessToken(req);
   if (!token) throw AppError.unauthorized("Access token not found");
 
   let decoded;

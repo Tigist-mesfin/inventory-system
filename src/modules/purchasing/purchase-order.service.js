@@ -126,8 +126,19 @@ exports.getById = async (id, user) => {
   return purchaseOrderRepository.toPublic(po);
 };
 
+const normalizeSourceMode = (value) =>
+  String(value || "ONLINE").toUpperCase() === "OFFLINE" ? "OFFLINE" : "ONLINE";
+
 exports.create = async (payload, user) => {
   const userId = user.id;
+  const companyId = tenant.companyIdOf(user);
+  if (payload.clientTransactionId) {
+    const existing = await purchaseOrderRepository.findByClientTransactionId(
+      payload.clientTransactionId,
+      companyId,
+    );
+    if (existing) return purchaseOrderRepository.toPublic(existing);
+  }
   const { supplierId, walkInNote } = await resolveSupplier(payload, user);
   const { lines, subtotal } = await buildLines(payload.items, user);
   const totals = headerTotals(subtotal, payload.discountAmount);
@@ -161,6 +172,8 @@ exports.create = async (payload, user) => {
         paymentMethod,
         status: "DRAFT",
         notes,
+        clientTransactionId: payload.clientTransactionId || null,
+        sourceMode: normalizeSourceMode(payload.sourceMode),
       },
       transaction,
     );

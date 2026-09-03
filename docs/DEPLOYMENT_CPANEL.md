@@ -116,6 +116,7 @@ If frontend and API are on **completely different domains** (e.g. `myshop.com` +
 3. **Restart** the Node application after env changes.
 4. **Do not** serve an old `client/dist` built with wrong `VITE_API_URL`.
 5. If using LiteSpeed/Apache proxy to Node, ensure it does **not strip** `Set-Cookie` headers.
+6. For **Flutter mobile**, ensure the proxy passes **`Authorization`** or **`X-Access-Token`** to Node (Apache often strips `Authorization` by default).
 
 ---
 
