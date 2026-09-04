@@ -1,0 +1,4 @@
+storePassword=nigdstock
+keyPassword=nigdstock
+keyAlias=upload
+storeFile=../app/upload-keystore.jks
