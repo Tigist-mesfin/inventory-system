@@ -12,11 +12,15 @@ const MODULES = [
   { key: "warehouse", label: "Stores" },
   { key: "customers", label: "Customers & suppliers" },
   { key: "finance", label: "Expenses & profit" },
-  { key: "insights", label: "AI desk" },
+  { key: "insights", label: "AI desk / reports" },
   { key: "auth", label: "Team / company" },
+  { key: "audit", label: "Audit log" },
 ];
 
-const ACTIONS = ["READ", "CREATE", "UPDATE", "DELETE", "APPROVE"];
+const ACTIONS = ["READ", "CREATE", "UPDATE", "DELETE", "APPROVE", "EXPORT"];
+
+const allPermissionNames = () =>
+  MODULES.flatMap((mod) => ACTIONS.map((action) => `${mod.key}:${action}`));
 
 const emptyForm = {
   fullName: "",
@@ -75,6 +79,25 @@ export default function TeamPage() {
           : [...prev.permissions, name],
       };
     });
+  };
+
+  const toggleModule = (moduleKey, grant) => {
+    setForm((prev) => {
+      const names = ACTIONS.map((action) => `${moduleKey}:${action}`);
+      const without = prev.permissions.filter((row) => !names.includes(row));
+      return {
+        ...prev,
+        permissions: grant ? [...without, ...names] : without,
+      };
+    });
+  };
+
+  const selectAllPermissions = () => {
+    setForm((prev) => ({ ...prev, permissions: allPermissionNames() }));
+  };
+
+  const clearPermissions = () => {
+    setForm((prev) => ({ ...prev, permissions: [] }));
   };
 
   const startEdit = (row) => {
@@ -192,6 +215,14 @@ export default function TeamPage() {
         ) : null}
 
         <div style={{ marginTop: 16, overflowX: "auto" }}>
+          <div className="row-actions" style={{ marginBottom: 8 }}>
+            <button type="button" className="btn secondary" onClick={selectAllPermissions}>
+              Select all permissions
+            </button>
+            <button type="button" className="btn secondary" onClick={clearPermissions}>
+              Clear
+            </button>
+          </div>
           <table>
             <thead>
               <tr>
@@ -199,26 +230,38 @@ export default function TeamPage() {
                 {ACTIONS.map((action) => (
                   <th key={action}>{action}</th>
                 ))}
+                <th>All</th>
               </tr>
             </thead>
             <tbody>
-              {MODULES.map((mod) => (
-                <tr key={mod.key}>
-                  <td>{mod.label}</td>
-                  {ACTIONS.map((action) => {
-                    const name = `${mod.key}:${action}`;
-                    return (
-                      <td key={name}>
-                        <input
-                          type="checkbox"
-                          checked={form.permissions.includes(name)}
-                          onChange={() => togglePermission(name)}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {MODULES.map((mod) => {
+                const moduleNames = ACTIONS.map((action) => `${mod.key}:${action}`);
+                const allGranted = moduleNames.every((name) => form.permissions.includes(name));
+                return (
+                  <tr key={mod.key}>
+                    <td>{mod.label}</td>
+                    {ACTIONS.map((action) => {
+                      const name = `${mod.key}:${action}`;
+                      return (
+                        <td key={name}>
+                          <input
+                            type="checkbox"
+                            checked={form.permissions.includes(name)}
+                            onChange={() => togglePermission(name)}
+                          />
+                        </td>
+                      );
+                    })}
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={allGranted}
+                        onChange={(e) => toggleModule(mod.key, e.target.checked)}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

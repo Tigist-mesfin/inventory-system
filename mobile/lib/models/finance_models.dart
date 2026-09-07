@@ -163,6 +163,10 @@ class VatMonthRow {
     required this.salesVat,
     required this.purchaseVat,
     required this.netVat,
+    this.salesCount = 0,
+    this.purchaseCount = 0,
+    this.salesTotal = 0,
+    this.purchaseTotal = 0,
   });
 
   factory VatMonthRow.fromJson(Map<String, dynamic> json) {
@@ -171,6 +175,10 @@ class VatMonthRow {
       salesVat: parseMoney(json['salesVat']),
       purchaseVat: parseMoney(json['purchaseVat']),
       netVat: parseMoney(json['netVat']),
+      salesCount: _asInt(json['salesCount']),
+      purchaseCount: _asInt(json['purchaseCount']),
+      salesTotal: parseMoney(json['salesTotal']),
+      purchaseTotal: parseMoney(json['purchaseTotal']),
     );
   }
 
@@ -178,6 +186,45 @@ class VatMonthRow {
   final double salesVat;
   final double purchaseVat;
   final double netVat;
+  final int salesCount;
+  final int purchaseCount;
+  final double salesTotal;
+  final double purchaseTotal;
+}
+
+class VatDocRow {
+  VatDocRow({
+    required this.id,
+    required this.date,
+    required this.document,
+    required this.party,
+    required this.net,
+    required this.vat,
+    required this.total,
+  });
+
+  factory VatDocRow.fromJson(Map<String, dynamic> json) {
+    return VatDocRow(
+      id: json['id']?.toString() ?? '',
+      date: json['date']?.toString() ?? '',
+      document: json['document']?.toString() ?? '',
+      party: json['party']?.toString() ?? '',
+      net: parseMoney(json['net']),
+      vat: parseMoney(json['vat']),
+      total: parseMoney(json['total']),
+    );
+  }
+
+  final String id;
+  final String date;
+  final String document;
+  final String party;
+  final double net;
+  final double vat;
+  final double total;
+
+  String get dayText =>
+      date.length >= 10 ? date.substring(0, 10) : (date.isEmpty ? '—' : date);
 }
 
 class VatReport {
@@ -187,6 +234,16 @@ class VatReport {
     required this.purchaseVat,
     required this.netVat,
     required this.monthly,
+    this.salesNet = 0,
+    this.salesTotal = 0,
+    this.salesCount = 0,
+    this.purchaseNet = 0,
+    this.purchaseTotal = 0,
+    this.purchaseCount = 0,
+    this.sales = const [],
+    this.purchases = const [],
+    this.from,
+    this.to,
   });
 
   factory VatReport.fromJson(Map<String, dynamic>? json) {
@@ -200,12 +257,32 @@ class VatReport {
             )
             .toList() ??
         const <VatMonthRow>[];
+    final sales = (json?['sales'] as List?)
+            ?.whereType<Map>()
+            .map((row) => VatDocRow.fromJson(Map<String, dynamic>.from(row)))
+            .toList() ??
+        const <VatDocRow>[];
+    final purchases = (json?['purchases'] as List?)
+            ?.whereType<Map>()
+            .map((row) => VatDocRow.fromJson(Map<String, dynamic>.from(row)))
+            .toList() ??
+        const <VatDocRow>[];
     return VatReport(
       vatRate: parseMoney(json?['vatRate']),
       salesVat: parseMoney(totals['salesVat']),
       purchaseVat: parseMoney(totals['purchaseVat']),
       netVat: parseMoney(totals['netVat']),
       monthly: monthly,
+      salesNet: parseMoney(totals['salesNet']),
+      salesTotal: parseMoney(totals['salesTotal']),
+      salesCount: _asInt(totals['salesCount']),
+      purchaseNet: parseMoney(totals['purchaseNet']),
+      purchaseTotal: parseMoney(totals['purchaseTotal']),
+      purchaseCount: _asInt(totals['purchaseCount']),
+      sales: sales,
+      purchases: purchases,
+      from: json?['from']?.toString(),
+      to: json?['to']?.toString(),
     );
   }
 
@@ -214,6 +291,160 @@ class VatReport {
   final double purchaseVat;
   final double netVat;
   final List<VatMonthRow> monthly;
+  final double salesNet;
+  final double salesTotal;
+  final int salesCount;
+  final double purchaseNet;
+  final double purchaseTotal;
+  final int purchaseCount;
+  final List<VatDocRow> sales;
+  final List<VatDocRow> purchases;
+  final String? from;
+  final String? to;
+}
+
+class ExpenseRow {
+  ExpenseRow({
+    required this.id,
+    required this.expenseDate,
+    required this.category,
+    required this.description,
+    required this.amount,
+    required this.paymentMethod,
+  });
+
+  factory ExpenseRow.fromJson(Map<String, dynamic> json) {
+    return ExpenseRow(
+      id: json['id']?.toString() ?? '',
+      expenseDate: json['expenseDate']?.toString() ?? '',
+      category: json['category']?.toString() ?? 'OTHER',
+      description: json['description']?.toString() ?? '',
+      amount: parseMoney(json['amount']),
+      paymentMethod: json['paymentMethod']?.toString() ?? '',
+    );
+  }
+
+  final String id;
+  final String expenseDate;
+  final String category;
+  final String description;
+  final double amount;
+  final String paymentMethod;
+
+  String get dayText => expenseDate.length >= 10
+      ? expenseDate.substring(0, 10)
+      : (expenseDate.isEmpty ? '—' : expenseDate);
+
+  String get categoryLabel =>
+      expenseCategoryLabels[category] ?? category;
+}
+
+class ExpenseReport {
+  ExpenseReport({
+    required this.periodLabel,
+    required this.expenses,
+    required this.count,
+    required this.amount,
+  });
+
+  factory ExpenseReport.fromJson(Map<String, dynamic>? json) {
+    final period = json?['period'] is Map
+        ? Map<String, dynamic>.from(json!['period'] as Map)
+        : <String, dynamic>{};
+    final totals = json?['totals'] is Map
+        ? Map<String, dynamic>.from(json!['totals'] as Map)
+        : <String, dynamic>{};
+    final expenses = (json?['expenses'] as List?)
+            ?.whereType<Map>()
+            .map((row) => ExpenseRow.fromJson(Map<String, dynamic>.from(row)))
+            .toList() ??
+        const <ExpenseRow>[];
+    return ExpenseReport(
+      periodLabel: period['label']?.toString() ?? '',
+      expenses: expenses,
+      count: _asInt(totals['count']),
+      amount: parseMoney(totals['amount']),
+    );
+  }
+
+  final String periodLabel;
+  final List<ExpenseRow> expenses;
+  final int count;
+  final double amount;
+}
+
+class OtherIncomeRow {
+  OtherIncomeRow({
+    required this.id,
+    required this.incomeDate,
+    required this.receivedFrom,
+    required this.reason,
+    required this.amount,
+    required this.paymentMethod,
+  });
+
+  factory OtherIncomeRow.fromJson(Map<String, dynamic> json) {
+    return OtherIncomeRow(
+      id: json['id']?.toString() ?? '',
+      incomeDate: json['incomeDate']?.toString() ?? '',
+      receivedFrom: json['receivedFrom']?.toString() ?? '',
+      reason: json['reason']?.toString() ?? '',
+      amount: parseMoney(json['amount']),
+      paymentMethod: json['paymentMethod']?.toString() ?? '',
+    );
+  }
+
+  final String id;
+  final String incomeDate;
+  final String receivedFrom;
+  final String reason;
+  final double amount;
+  final String paymentMethod;
+
+  String get dayText => incomeDate.length >= 10
+      ? incomeDate.substring(0, 10)
+      : (incomeDate.isEmpty ? '—' : incomeDate);
+}
+
+class OtherIncomeReport {
+  OtherIncomeReport({
+    required this.periodLabel,
+    required this.incomes,
+    required this.count,
+    required this.amount,
+  });
+
+  factory OtherIncomeReport.fromJson(Map<String, dynamic>? json) {
+    final period = json?['period'] is Map
+        ? Map<String, dynamic>.from(json!['period'] as Map)
+        : <String, dynamic>{};
+    final totals = json?['totals'] is Map
+        ? Map<String, dynamic>.from(json!['totals'] as Map)
+        : <String, dynamic>{};
+    final incomes = (json?['incomes'] as List?)
+            ?.whereType<Map>()
+            .map(
+              (row) => OtherIncomeRow.fromJson(Map<String, dynamic>.from(row)),
+            )
+            .toList() ??
+        const <OtherIncomeRow>[];
+    return OtherIncomeReport(
+      periodLabel: period['label']?.toString() ?? '',
+      incomes: incomes,
+      count: _asInt(totals['count']),
+      amount: parseMoney(totals['amount']),
+    );
+  }
+
+  final String periodLabel;
+  final List<OtherIncomeRow> incomes;
+  final int count;
+  final double amount;
+}
+
+int _asInt(dynamic value) {
+  if (value is num) return value.toInt();
+  return int.tryParse('$value') ?? 0;
 }
 
 class StatementTableRow {

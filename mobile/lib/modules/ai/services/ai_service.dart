@@ -1,6 +1,6 @@
-import '../../models/ai_models.dart';
-import '../../network/api_endpoints.dart';
-import '../../network/dio_client.dart';
+import '../../../models/ai_models.dart';
+import '../../../network/api_endpoints.dart';
+import '../../../network/dio_client.dart';
 
 class AiService {
   AiService({required DioClient client}) : _client = client;

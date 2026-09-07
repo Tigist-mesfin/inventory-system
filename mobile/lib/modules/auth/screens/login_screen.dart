@@ -3,9 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../../../constants/app_colors.dart';
 import '../../../core/config/app_config.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../widgets/common/empty_state.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/auth_brand.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   late final TextEditingController _baseUrl = TextEditingController(
     text: AppConfig.apiBaseUrl,
   );
+  bool _obscure = true;
 
   bool get _showUrlOverride => AppConfig.allowUrlOverride;
 
@@ -67,102 +69,171 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _openRegister() async {
+    context.read<AuthProvider>().clearError();
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: AppTheme.scaffoldDecoration,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Consumer<AuthProvider>(
-          builder: (context, auth, _) {
-            return ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
-                const SizedBox(height: 40),
-                Icon(
-                  Icons.inventory_2,
-                  size: 72,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Inventory Mobile',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+    return AuthPageScaffold(
+      child: Consumer<AuthProvider>(
+        builder: (context, auth, _) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+            children: [
+              const AuthLogoHeader(
+                title: 'Invontory',
+                subtitle: 'Know every sack, size, and shilling.',
+              ),
+              const SizedBox(height: 22),
+              AuthModeSwitcher(
+                isLogin: true,
+                onLogin: () {},
+                onRegister: _openRegister,
+              ),
+              const SizedBox(height: 16),
+              AuthFormCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Welcome back',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.ink,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Sign in to manage purchases and sales online or offline.',
+                      style: TextStyle(color: AppColors.inkSoft, height: 1.35),
+                    ),
+                    const SizedBox(height: 18),
+                    if (_showUrlOverride) ...[
+                      TextField(
+                        controller: _baseUrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Server URL (dev only)',
+                          hintText: 'http://10.0.2.2:3000',
+                          prefixIcon: Icon(Icons.dns_outlined),
+                        ),
+                        keyboardType: TextInputType.url,
                       ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Sign in to manage purchases and sales online or offline.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 32),
-                if (_showUrlOverride) ...[
-                  TextField(
-                    controller: _baseUrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Server URL (dev only)',
-                      hintText: 'http://10.0.2.2:3000',
-                      helperText: 'Override for local backend testing',
+                      const SizedBox(height: 10),
+                    ],
+                    OutlinedButton.icon(
+                      onPressed:
+                          auth.testingConnection ? null : _testConnection,
+                      icon: auth.testingConnection
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.wifi_find_rounded),
+                      label: const Text('Test server connection'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.brand,
+                        side: BorderSide(
+                          color: AppColors.brand.withValues(alpha: 0.35),
+                        ),
+                        minimumSize: const Size.fromHeight(46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
                     ),
-                    keyboardType: TextInputType.url,
-                  ),
-                  const SizedBox(height: 8),
-                ] else
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.cloud, color: AppColors.primary),
-                      title: const Text('Production API'),
-                      subtitle: Text(auth.baseUrl),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _username,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone or username',
+                        prefixIcon: Icon(Icons.person_outline_rounded),
+                      ),
+                      textInputAction: TextInputAction.next,
+                      keyboardType: TextInputType.text,
                     ),
-                  ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: auth.testingConnection ? null : _testConnection,
-                  icon: auth.testingConnection
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.wifi_find),
-                  label: const Text('Test server connection'),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _password,
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        prefixIcon: const Icon(Icons.lock_outline_rounded),
+                        suffixIcon: IconButton(
+                          onPressed: () =>
+                              setState(() => _obscure = !_obscure),
+                          icon: Icon(
+                            _obscure
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                      obscureText: _obscure,
+                      onSubmitted: (_) => _submit(),
+                    ),
+                    if (auth.error != null) ...[
+                      const SizedBox(height: 12),
+                      ErrorBanner(message: auth.error!),
+                    ],
+                    const SizedBox(height: 18),
+                    FilledButton(
+                      onPressed: auth.loading ? null : _submit,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.brand,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: auth.loading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Enter the desk',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextButton(
+                      onPressed: auth.loading ? null : _openRegister,
+                      child: const Text.rich(
+                        TextSpan(
+                          style: TextStyle(color: AppColors.inkSoft),
+                          children: [
+                            TextSpan(text: 'New company? '),
+                            TextSpan(
+                              text: 'Register',
+                              style: TextStyle(
+                                color: AppColors.brand,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _username,
-                  decoration: const InputDecoration(labelText: 'Username'),
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _password,
-                  decoration: const InputDecoration(labelText: 'Password'),
-                  obscureText: true,
-                  onSubmitted: (_) => _submit(),
-                ),
-                if (auth.error != null) ...[
-                  const SizedBox(height: 12),
-                  ErrorBanner(message: auth.error!),
-                ],
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: auth.loading ? null : _submit,
-                  child: auth.loading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Sign in'),
-                ),
-              ],
-            );
-          },
-        ),
-        ),
+              ),
+              const SizedBox(height: 18),
+              const AuthHelpFooter(),
+            ],
+          );
+        },
       ),
     );
   }

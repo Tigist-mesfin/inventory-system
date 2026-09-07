@@ -97,6 +97,50 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> registerCompany({
+    required String name,
+    required String phone,
+    required String password,
+    String address = '',
+    String? baseUrl,
+  }) async {
+    _error = null;
+    _connectionMessage = null;
+    _loading = true;
+    notifyListeners();
+    try {
+      if (baseUrl != null && baseUrl.trim().isNotEmpty) {
+        await _client.updateBaseUrl(baseUrl.trim());
+        _baseUrl = _client.baseUrl;
+      }
+      _user = await _authService.registerCompany(
+        name: name,
+        phone: phone,
+        password: password,
+        address: address,
+      );
+      if (!await _client.hasSession()) {
+        throw AppException(
+          'Registration succeeded but session could not be verified.',
+        );
+      }
+      _loading = false;
+      notifyListeners();
+      return true;
+    } catch (error) {
+      _error = friendlyError(error, serverUrl: _client.baseUrl);
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void clearError() {
+    if (_error == null) return;
+    _error = null;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     await _authService.logout();
     _user = null;

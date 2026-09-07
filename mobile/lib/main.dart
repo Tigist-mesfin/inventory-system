@@ -25,7 +25,22 @@ import 'modules/ledger/services/ledger_service.dart';
 import 'modules/parties/providers/parties_provider.dart';
 import 'modules/parties/services/parties_service.dart';
 import 'modules/finance/providers/finance_provider.dart';
+import 'modules/finance/providers/expenses_provider.dart';
 import 'modules/finance/services/finance_service.dart';
+import 'modules/catalog/providers/catalog_provider.dart';
+import 'modules/catalog/services/catalog_service.dart';
+import 'modules/team/providers/team_provider.dart';
+import 'modules/team/services/team_service.dart';
+import 'modules/warehouse/providers/warehouse_provider.dart';
+import 'modules/warehouse/services/warehouse_service.dart';
+import 'modules/transfers/providers/transfer_provider.dart';
+import 'modules/transfers/services/transfer_service.dart';
+import 'modules/settings/providers/payment_method_provider.dart';
+import 'modules/settings/services/payment_method_service.dart';
+import 'modules/settings/providers/company_profile_provider.dart';
+import 'modules/settings/services/company_profile_service.dart';
+import 'modules/ai/providers/ai_provider.dart';
+import 'modules/ai/services/ai_service.dart';
 import 'modules/sync/providers/sync_provider.dart';
 import 'network/dio_client.dart';
 import 'services/cache_service.dart';
@@ -75,6 +90,13 @@ Future<void> main() async {
   final ledgerService = LedgerService(client: dioClient);
   final partiesService = PartiesService(client: dioClient);
   final financeService = FinanceService(client: dioClient);
+  final catalogService = CatalogService(client: dioClient);
+  final teamService = TeamService(client: dioClient);
+  final warehouseService = WarehouseService(client: dioClient);
+  final transferService = TransferService(client: dioClient);
+  final paymentMethodService = PaymentMethodService(client: dioClient);
+  final companyProfileService = CompanyProfileService(client: dioClient);
+  final aiService = AiService(client: dioClient);
   final syncManager = SyncManager(
     db: db,
     connectivity: connectivity,
@@ -98,6 +120,13 @@ Future<void> main() async {
       ledgerService: ledgerService,
       partiesService: partiesService,
       financeService: financeService,
+      catalogService: catalogService,
+      teamService: teamService,
+      warehouseService: warehouseService,
+      transferService: transferService,
+      paymentMethodService: paymentMethodService,
+      companyProfileService: companyProfileService,
+      aiService: aiService,
       syncManager: syncManager,
     ),
   );
@@ -118,6 +147,13 @@ class InventoryApp extends StatelessWidget {
     required this.ledgerService,
     required this.partiesService,
     required this.financeService,
+    required this.catalogService,
+    required this.teamService,
+    required this.warehouseService,
+    required this.transferService,
+    required this.paymentMethodService,
+    required this.companyProfileService,
+    required this.aiService,
     required this.syncManager,
   });
 
@@ -133,6 +169,13 @@ class InventoryApp extends StatelessWidget {
   final LedgerService ledgerService;
   final PartiesService partiesService;
   final FinanceService financeService;
+  final CatalogService catalogService;
+  final TeamService teamService;
+  final WarehouseService warehouseService;
+  final TransferService transferService;
+  final PaymentMethodService paymentMethodService;
+  final CompanyProfileService companyProfileService;
+  final AiService aiService;
   final SyncManager syncManager;
 
   @override
@@ -245,6 +288,140 @@ class InventoryApp extends StatelessWidget {
               previous ??
               FinanceProvider(
                 financeService: financeService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, ExpensesProvider>(
+          create: (context) => ExpensesProvider(
+            financeService: financeService,
+            cache: cacheService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              ExpensesProvider(
+                financeService: financeService,
+                cache: cacheService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, OtherIncomeProvider>(
+          create: (context) => OtherIncomeProvider(
+            financeService: financeService,
+            cache: cacheService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              OtherIncomeProvider(
+                financeService: financeService,
+                cache: cacheService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, VatProvider>(
+          create: (context) => VatProvider(
+            financeService: financeService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              VatProvider(
+                financeService: financeService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, CatalogProvider>(
+          create: (context) => CatalogProvider(
+            catalogService: catalogService,
+            cache: cacheService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              CatalogProvider(
+                catalogService: catalogService,
+                cache: cacheService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, TeamProvider>(
+          create: (context) => TeamProvider(
+            teamService: teamService,
+            cache: cacheService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              TeamProvider(
+                teamService: teamService,
+                cache: cacheService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, WarehouseProvider>(
+          create: (context) => WarehouseProvider(
+            warehouseService: warehouseService,
+            cache: cacheService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              WarehouseProvider(
+                warehouseService: warehouseService,
+                cache: cacheService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, TransferProvider>(
+          create: (context) => TransferProvider(
+            transferService: transferService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              TransferProvider(
+                transferService: transferService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, PaymentMethodProvider>(
+          create: (context) => PaymentMethodProvider(
+            service: paymentMethodService,
+            cache: cacheService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              PaymentMethodProvider(
+                service: paymentMethodService,
+                cache: cacheService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, CompanyProfileProvider>(
+          create: (context) => CompanyProfileProvider(
+            service: companyProfileService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              CompanyProfileProvider(
+                service: companyProfileService,
+                sync: sync,
+              ),
+        ),
+        ChangeNotifierProxyProvider<SyncProvider, AiProvider>(
+          create: (context) => AiProvider(
+            aiService: aiService,
+            cache: cacheService,
+            sync: context.read<SyncProvider>(),
+          ),
+          update: (_, sync, previous) =>
+              previous ??
+              AiProvider(
+                aiService: aiService,
+                cache: cacheService,
                 sync: sync,
               ),
         ),

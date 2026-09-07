@@ -53,6 +53,49 @@ class AuthService {
     return user;
   }
 
+  Future<Map<String, dynamic>> registerCompany({
+    required String name,
+    required String phone,
+    required String password,
+    String address = '',
+  }) async {
+    final result = await _client.postAuth(
+      ApiEndpoints.authRegisterCompany,
+      body: {
+        'name': name,
+        'phone': phone,
+        'password': password,
+        if (address.trim().isNotEmpty) 'address': address.trim(),
+      },
+    );
+    final data = result.envelope['data'] as Map<String, dynamic>? ?? {};
+    final tokens = result.tokens;
+
+    if (tokens.isComplete || tokens.hasAccess) {
+      await _client.setSessionTokens(
+        accessToken: tokens.accessToken!,
+        refreshToken: tokens.refreshToken,
+      );
+    } else if (await _client.hasSession()) {
+      await _client.syncTokensFromCookies();
+      ApiLogger.info('Register OK via HTTP cookies only');
+    } else {
+      throw AppException(
+        'Registration succeeded but no auth token was received.',
+      );
+    }
+
+    if (!await _client.hasSession()) {
+      throw AppException('Could not establish an authenticated session.');
+    }
+
+    final user = data['user'] as Map<String, dynamic>? ?? {};
+    if (user.isNotEmpty) {
+      await _tokenStorage.saveUser(user);
+    }
+    return user;
+  }
+
   /// Restores a previous login. Returns user if still valid (or cached offline).
   /// Clears tokens only when refresh fails / session is truly expired.
   Future<Map<String, dynamic>?> restoreSession() async {

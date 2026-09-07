@@ -1,4 +1,4 @@
-import '../server_list_models.dart';
+import 'server_list_models.dart';
 
 Map<String, dynamic> asMap(dynamic value) =>
     value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
@@ -74,7 +74,7 @@ class AiChatResult {
     this.noMatch = false,
     this.error = false,
     this.question,
-    this.rowCount,
+    this.rowCount = 0,
     this.companyScoped = false,
     this.lastUpdated,
   });

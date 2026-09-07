@@ -17,6 +17,17 @@ import '../../ledger/screens/ledger_screen.dart';
 import '../../parties/screens/parties_screen.dart';
 import '../../parties/screens/customer_wallets_screen.dart';
 import '../../finance/screens/income_statement_screen.dart';
+import '../../finance/screens/vat_screen.dart';
+import '../../finance/screens/expenses_screen.dart';
+import '../../finance/screens/other_income_screen.dart';
+import '../../catalog/screens/products_screen.dart';
+import '../../team/screens/team_screen.dart';
+import '../../warehouse/screens/warehouses_screen.dart';
+import '../../transfers/screens/transfers_screen.dart';
+import '../../settings/screens/payment_methods_screen.dart';
+import '../../settings/screens/company_profile_screen.dart';
+import '../../ai/screens/ai_desk_screen.dart';
+import '../../ai/screens/ai_assistant_screen.dart';
 import '../../sync/providers/sync_provider.dart';
 import '../../sync/screens/sync_screen.dart';
 
@@ -29,6 +40,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   AppNavId _current = AppNavId.dashboard;
+  String? _assistantQuestion;
 
   static const _onlineTabs = [
     AppNavId.dashboard,
@@ -77,7 +89,19 @@ class _HomeShellState extends State<HomeShell> {
       );
       return;
     }
-    setState(() => _current = id);
+    setState(() {
+      _current = id;
+      if (id != AppNavId.aiAssistant) {
+        _assistantQuestion = null;
+      }
+    });
+  }
+
+  void _openAssistant([String? question]) {
+    setState(() {
+      _assistantQuestion = question;
+      _current = AppNavId.aiAssistant;
+    });
   }
 
   Widget _bodyFor(AppNavId id) {
@@ -91,8 +115,11 @@ class _HomeShellState extends State<HomeShell> {
       AppNavId.purchasing => const PurchasesScreen(),
       AppNavId.sync => const SyncScreen(),
       AppNavId.settings => const SettingsScreen(),
-      AppNavId.aiDesk => const _EmbeddedPlaceholder(title: 'AI desk'),
-      AppNavId.aiAssistant => const _EmbeddedPlaceholder(title: 'AI assistant'),
+      AppNavId.aiDesk => AiDeskScreen(onOpenAssistant: _openAssistant),
+      AppNavId.aiAssistant => AiAssistantScreen(
+          initialQuestion: _assistantQuestion,
+          onOpenDesk: () => _select(AppNavId.aiDesk),
+        ),
       AppNavId.liveStock => const StockScreen(),
       AppNavId.ledger => const LedgerScreen(),
       AppNavId.customers => PartiesScreen(
@@ -100,18 +127,20 @@ class _HomeShellState extends State<HomeShell> {
         ),
       AppNavId.wallets => const CustomerWalletsScreen(),
       AppNavId.incomeStatement => const IncomeStatementScreen(),
-      AppNavId.team => const _EmbeddedPlaceholder(title: 'Salesmen'),
-      AppNavId.products => const _EmbeddedPlaceholder(title: 'Products'),
-      AppNavId.vat => const _EmbeddedPlaceholder(title: 'VAT data'),
+      AppNavId.team => const TeamScreen(),
+      AppNavId.products => const ProductsScreen(),
+      AppNavId.vat => const VatScreen(),
       AppNavId.reports => const _EmbeddedPlaceholder(title: 'Reports'),
-      AppNavId.expenses => const _EmbeddedPlaceholder(title: 'Expenses'),
-      AppNavId.otherIncome => const _EmbeddedPlaceholder(title: 'Other income'),
-      AppNavId.warehouses => const _EmbeddedPlaceholder(title: 'Warehouses'),
-      AppNavId.transfers => const _EmbeddedPlaceholder(title: 'Transfers'),
-      AppNavId.paymentMethods =>
-        const _EmbeddedPlaceholder(title: 'Payment methods'),
-      AppNavId.companyProfile =>
-        const _EmbeddedPlaceholder(title: 'Company profile'),
+      AppNavId.expenses => ExpensesScreen(
+          onOpenOtherIncome: () => _select(AppNavId.otherIncome),
+        ),
+      AppNavId.otherIncome => OtherIncomeScreen(
+          onOpenExpenses: () => _select(AppNavId.expenses),
+        ),
+      AppNavId.warehouses => const WarehousesScreen(),
+      AppNavId.transfers => const TransfersScreen(),
+      AppNavId.paymentMethods => const PaymentMethodsScreen(),
+      AppNavId.companyProfile => const CompanyProfileScreen(),
     };
   }
 

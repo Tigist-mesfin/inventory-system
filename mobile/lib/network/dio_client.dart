@@ -239,6 +239,15 @@ class DioClient {
     }
   }
 
+  Future<Map<String, dynamic>> delete(String path) async {
+    try {
+      final response = await _dio.delete(path);
+      return _unwrap(response);
+    } on DioException catch (error) {
+      throw AppException(mapDioError(error, serverUrl: baseUrl));
+    }
+  }
+
   /// Login/register — returns JSON envelope and extracts tokens from body or cookies.
   Future<({Map<String, dynamic> envelope, AuthTokens tokens})> postAuth(
     String path, {
