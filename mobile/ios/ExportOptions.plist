@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Template for App Store export. Fill in YOUR Apple Developer Team ID in Xcode
+  or replace TEAM_ID_HERE before using:
+    xcodebuild -exportArchive -archivePath build/ios/archive/Runner.xcarchive \
+      -exportOptionsPlist ios/ExportOptions.plist -exportPath build/ios/ipa
+-->
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<key>teamID</key>
+	<string>TEAM_ID_HERE</string>
+</dict>
+</plist>

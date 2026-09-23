@@ -427,7 +427,8 @@ class InventoryApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'Inventory Mobile',
+        title: 'Nigd Stock',
+        debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         home: const RootScreen(),
       ),

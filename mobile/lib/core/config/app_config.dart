@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// API and app settings loaded from `mobile/.env` (gitignored).
@@ -22,7 +23,10 @@ class AppConfig {
     }
 
     apiBaseUrl = _readUrl();
-    allowUrlOverride = _readBool('ALLOW_URL_OVERRIDE', fallback: false);
+    // Never expose server URL override / connection tooling in Release builds,
+    // even if a misconfigured .env ships ALLOW_URL_OVERRIDE=true.
+    allowUrlOverride =
+        kDebugMode && _readBool('ALLOW_URL_OVERRIDE', fallback: false);
     vatRate = _readDouble('VAT_RATE', fallback: 15);
   }
 
