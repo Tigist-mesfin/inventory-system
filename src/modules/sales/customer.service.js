@@ -16,6 +16,28 @@ const emptyToNull = (value) => {
   return value;
 };
 
+const resolvePhone = (phone) => {
+  const raw = String(phone || "").trim();
+  if (!raw) return null;
+  return phoneNormalize(raw) || raw;
+};
+
+const assertPhoneAvailable = async (phoneRaw, user, { excludeId, transaction } = {}) => {
+  const phone = resolvePhone(phoneRaw);
+  if (!phone) throw AppError.badRequest("A valid phone number is required");
+  const existing = await customerRepository.findByPhone(
+    phone,
+    tenant.companyIdOf(user),
+    { excludeId, transaction },
+  );
+  if (existing) {
+    throw AppError.conflict(
+      "This phone number is already registered. Use a different phone.",
+    );
+  }
+  return phone;
+};
+
 const withBalances = async (customer) => {
   const extras = await customerRepository.debtAndHistory(customer);
   return customerRepository.toPublic(customer, extras);
@@ -95,12 +117,13 @@ exports.create = async (payload, user) => {
   const userId = user.id;
   const type = payload.type || "CUSTOMER";
   return sequelize.transaction(async (transaction) => {
+    const phone = await assertPhoneAvailable(payload.phone, user, { transaction });
     let supplierId = null;
     if (type === "SUPPLIER") {
       const supplier = await supplierService.create(
         {
           name: payload.name,
-          phone: payload.phone,
+          phone,
           address: payload.location ? { line: payload.location } : null,
           status: payload.status || "ACTIVE",
         },
@@ -114,7 +137,7 @@ exports.create = async (payload, user) => {
         createdBy: userId,
         companyId: tenant.companyIdOf(user),
         name: payload.name,
-        phone: phoneNormalize(payload.phone) || payload.phone,
+        phone,
         businessName: emptyToNull(payload.businessName) ?? null,
         location: emptyToNull(payload.location) ?? null,
         creditLimit: payload.creditLimit ?? 0,
@@ -132,23 +155,43 @@ exports.create = async (payload, user) => {
 exports.update = async (id, payload, user) => {
   const customer = await customerRepository.findById(id);
   tenant.assertOwned(user, customer, "Customer not found");
-  if (payload.name !== undefined) customer.name = payload.name;
-  if (payload.phone !== undefined) {
-    customer.phone = phoneNormalize(payload.phone) || payload.phone;
-  }
-  if (payload.businessName !== undefined) {
-    customer.businessName = emptyToNull(payload.businessName);
-  }
-  if (payload.location !== undefined) {
-    customer.location = emptyToNull(payload.location);
-  }
-  if (payload.creditLimit !== undefined) {
-    customer.creditLimit = payload.creditLimit;
-  }
-  if (payload.notes !== undefined) customer.notes = emptyToNull(payload.notes);
-  if (payload.status !== undefined) customer.status = payload.status;
-  const saved = await customerRepository.save(customer);
-  return withBalances(saved);
+  return sequelize.transaction(async (transaction) => {
+    if (payload.name !== undefined) customer.name = payload.name;
+    if (payload.phone !== undefined) {
+      customer.phone = await assertPhoneAvailable(payload.phone, user, {
+        excludeId: id,
+        transaction,
+      });
+    }
+    if (payload.businessName !== undefined) {
+      customer.businessName = emptyToNull(payload.businessName);
+    }
+    if (payload.location !== undefined) {
+      customer.location = emptyToNull(payload.location);
+    }
+    if (payload.creditLimit !== undefined) {
+      customer.creditLimit = payload.creditLimit;
+    }
+    if (payload.notes !== undefined) customer.notes = emptyToNull(payload.notes);
+    if (payload.status !== undefined) customer.status = payload.status;
+    if (payload.type !== undefined && payload.type !== customer.type) {
+      throw AppError.badRequest("Customer / supplier type cannot be changed");
+    }
+    const saved = await customerRepository.save(customer, transaction);
+    if (saved.supplierId) {
+      await supplierService.update(
+        saved.supplierId,
+        {
+          name: saved.name,
+          phone: saved.phone,
+          address: saved.location ? { line: saved.location } : null,
+          status: saved.status,
+        },
+        user,
+      );
+    }
+    return withBalances(saved);
+  });
 };
 
 exports.remove = async (id, user) => {
@@ -157,7 +200,13 @@ exports.remove = async (id, user) => {
   const sales = await customerRepository.countSales(id);
   if (sales > 0) {
     throw AppError.conflict(
-      "Customer has sales history and cannot be deleted; deactivate instead",
+      "This record has sales history and cannot be deleted; deactivate instead",
+    );
+  }
+  const purchases = await customerRepository.countPurchaseOrders(customer.supplierId);
+  if (purchases > 0) {
+    throw AppError.conflict(
+      "This supplier has purchase history and cannot be deleted; deactivate instead",
     );
   }
   await customerRepository.destroy(customer);

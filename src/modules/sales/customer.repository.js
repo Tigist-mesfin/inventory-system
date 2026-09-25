@@ -72,18 +72,33 @@ exports.findByIdForUpdate = async (id, transaction) =>
     transaction,
   });
 
+exports.findByPhone = async (phone, companyId, { excludeId, transaction } = {}) => {
+  const where = {
+    phone,
+    companyId: companyId || null,
+  };
+  if (excludeId) where.id = { [Op.ne]: excludeId };
+  return Customer.findOne({ where, transaction });
+};
+
 exports.create = async (payload, transaction) =>
   Customer.create(payload, { transaction });
 
-exports.save = async (customer) => {
-  await customer.save();
+exports.save = async (customer, transaction) => {
+  await customer.save({ transaction });
   return customer;
 };
 
-exports.destroy = async (customer) => customer.destroy();
+exports.destroy = async (customer, transaction) =>
+  customer.destroy({ transaction });
 
 exports.countSales = async (customerId) =>
   Sale.count({ where: { customerId } });
+
+exports.countPurchaseOrders = async (supplierId) => {
+  if (!supplierId) return 0;
+  return PurchaseOrder.count({ where: { supplierId } });
+};
 
 exports.debtAndHistory = async (customer) => {
   if (customer.type === "SUPPLIER") {

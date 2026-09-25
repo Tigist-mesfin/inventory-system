@@ -611,9 +611,14 @@ export default function SaleFormPage() {
       <VatSummary lines={filledItems} products={products} />
 
       {error ? <p className="error">{error}</p> : null}
-      <button className="btn saffron" style={{ marginTop: 16 }}>
-        Review sale
-      </button>
+      <div className="row-actions" style={{ marginTop: 16 }}>
+        <button type="button" className="btn secondary" onClick={() => navigate("/sell")}>
+          Cancel
+        </button>
+        <button className="btn saffron">
+          Review sale
+        </button>
+      </div>
     </form>
   );
 }

@@ -457,9 +457,22 @@ export default function PurchasingPage() {
           <VatSummary lines={lines} products={products} label="Grand total cost" />
 
           {error ? <p className="error">{error}</p> : null}
-          <button className="btn success" style={{ marginTop: 16 }} disabled={busy}>
-            {busy ? "Saving purchase…" : "Save purchase"}
-          </button>
+          <div className="row-actions" style={{ marginTop: 16 }}>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={busy}
+              onClick={() => {
+                setFormOpen(false);
+                setError("");
+              }}
+            >
+              Cancel
+            </button>
+            <button className="btn success" disabled={busy}>
+              {busy ? "Saving purchase…" : "Save purchase"}
+            </button>
+          </div>
         </form>
       ) : null}
 

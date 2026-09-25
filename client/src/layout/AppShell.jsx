@@ -11,6 +11,7 @@ const sideLinks = [
 
 
   { to: "/sell", label: "Sales", module: "sales", action: "READ" },
+  { to: "/orders", label: "Customer Orders", module: "sales", action: "READ" },
   { to: "/buy", label: "Purchasing", module: "purchasing", action: "READ" },
   { to: "/stock", label: "Live stock", module: "inventory", action: "READ" },
     

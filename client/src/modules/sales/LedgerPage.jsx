@@ -142,7 +142,6 @@ export default function LedgerPage() {
           </p>
         </div>
       </div>
-      {error ? <p className="error">{error}</p> : null}
 
       <section className="grid stats" style={{ marginBottom: 16 }}>
         <article className="card stat-card">
@@ -210,6 +209,7 @@ export default function LedgerPage() {
                 </select>
               </label>
             </div>
+            {error ? <p className="error" style={{ marginTop: 12 }}>{error}</p> : null}
             <button className="btn saffron" style={{ marginTop: 12 }} disabled={busy}>
               {busy ? "Saving…" : "Collect payment"}
             </button>
@@ -296,6 +296,7 @@ export default function LedgerPage() {
                 </select>
               </label>
             </div>
+            {error ? <p className="error" style={{ marginTop: 12 }}>{error}</p> : null}
             <button className="btn saffron" style={{ marginTop: 12 }} disabled={busy}>
               {busy ? "Saving…" : "Pay supplier"}
             </button>

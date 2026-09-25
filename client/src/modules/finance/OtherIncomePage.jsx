@@ -14,7 +14,11 @@ const PERIODS = [
   { value: "custom", label: "Custom dates" },
 ];
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const pad2 = (n) => String(n).padStart(2, "0");
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
 
 const emptyForm = () => ({
   incomeDate: todayIso(),
@@ -27,6 +31,7 @@ const emptyForm = () => ({
 export default function OtherIncomePage() {
   const { user } = useAuth();
   const [form, setForm] = useState(emptyForm());
+  const [editingId, setEditingId] = useState(null);
   const [period, setPeriod] = useState("this_month");
   const [from, setFrom] = useState(todayIso());
   const [to, setTo] = useState(todayIso());
@@ -35,6 +40,10 @@ export default function OtherIncomePage() {
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const canCreate = can(user, "finance", "CREATE");
+  const canUpdate = can(user, "finance", "UPDATE");
+  const canDelete = can(user, "finance", "DELETE");
 
   const load = async (nextPeriod = period, nextMethod = paymentMethodFilter) => {
     const query = { period: nextPeriod };
@@ -61,22 +70,43 @@ export default function OtherIncomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, paymentMethodFilter]);
 
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm(emptyForm());
+    setError("");
+  };
+
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setForm({
+      incomeDate: String(row.incomeDate).slice(0, 10),
+      receivedFrom: row.receivedFrom || "",
+      reason: row.reason || "",
+      amount: String(row.amount ?? ""),
+      paymentMethod: row.paymentMethod || "",
+    });
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const submit = async (event) => {
     event.preventDefault();
     setBusy(true);
     setError("");
+    const body = {
+      incomeDate: form.incomeDate,
+      receivedFrom: form.receivedFrom,
+      reason: form.reason,
+      amount: Number(form.amount),
+      paymentMethod: form.paymentMethod || null,
+    };
     try {
-      await api("/api/other-incomes", {
-        method: "POST",
-        body: {
-          incomeDate: form.incomeDate,
-          receivedFrom: form.receivedFrom,
-          reason: form.reason,
-          amount: Number(form.amount),
-          paymentMethod: form.paymentMethod || null,
-        },
-      });
-      setForm(emptyForm());
+      if (editingId) {
+        await api(`/api/other-incomes/${editingId}`, { method: "PATCH", body });
+      } else {
+        await api("/api/other-incomes", { method: "POST", body });
+      }
+      cancelEdit();
       await load();
     } catch (err) {
       setError(err.message);
@@ -90,6 +120,7 @@ export default function OtherIncomePage() {
     setError("");
     try {
       await api(`/api/other-incomes/${row.id}`, { method: "DELETE" });
+      if (editingId === row.id) cancelEdit();
       await load();
     } catch (err) {
       setError(err.message);
@@ -101,6 +132,7 @@ export default function OtherIncomePage() {
   }
 
   const lines = report?.incomes || [];
+  const showForm = canCreate || (editingId && canUpdate);
 
   return (
     <>
@@ -116,9 +148,9 @@ export default function OtherIncomePage() {
         </Link>
       </div>
 
-      {can(user, "finance", "CREATE") ? (
+      {showForm ? (
         <form className="card" onSubmit={submit}>
-          <h2 style={{ marginTop: 0 }}>Record income</h2>
+          <h2 style={{ marginTop: 0 }}>{editingId ? "Edit income" : "Record income"}</h2>
           <div className="catalog-fields">
             <label className="field">
               <span>Date</span>
@@ -127,6 +159,7 @@ export default function OtherIncomePage() {
                 value={form.incomeDate}
                 onChange={(e) => setForm({ ...form, incomeDate: e.target.value })}
                 required
+                disabled={busy}
               />
             </label>
             <label className="field">
@@ -136,6 +169,7 @@ export default function OtherIncomePage() {
                 onChange={(e) => setForm({ ...form, receivedFrom: e.target.value })}
                 placeholder="Person or company"
                 required
+                disabled={busy}
               />
             </label>
             <label className="field">
@@ -145,6 +179,7 @@ export default function OtherIncomePage() {
                 onChange={(e) => setForm({ ...form, reason: e.target.value })}
                 placeholder="e.g. Commission, refund, service fee"
                 required
+                disabled={busy}
               />
             </label>
             <label className="field">
@@ -156,6 +191,7 @@ export default function OtherIncomePage() {
                 value={form.amount}
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
                 required
+                disabled={busy}
               />
             </label>
             <label className="field">
@@ -166,6 +202,7 @@ export default function OtherIncomePage() {
                   onChange={(e) =>
                     setForm({ ...form, paymentMethod: e.target.value })
                   }
+                  disabled={busy}
                 >
                   <option value="">Choose method</option>
                   {methods.map((row) => (
@@ -181,14 +218,22 @@ export default function OtherIncomePage() {
                     setForm({ ...form, paymentMethod: e.target.value })
                   }
                   placeholder="Cash, Telebirr…"
+                  disabled={busy}
                 />
               )}
             </label>
           </div>
           {error ? <p className="error">{error}</p> : null}
-          <button className="btn saffron" disabled={busy} style={{ marginTop: 12 }}>
-            {busy ? "Saving…" : "Save income"}
-          </button>
+          <div className="row-actions" style={{ marginTop: 12 }}>
+            {editingId ? (
+              <button type="button" className="btn secondary" onClick={cancelEdit} disabled={busy}>
+                Cancel
+              </button>
+            ) : null}
+            <button className="btn saffron" disabled={busy}>
+              {busy ? "Saving…" : editingId ? "Save changes" : "Save income"}
+            </button>
+          </div>
         </form>
       ) : error ? (
         <p className="error">{error}</p>
@@ -289,15 +334,28 @@ export default function OtherIncomePage() {
                   <td>{row.paymentMethod || "—"}</td>
                   <td>{money(row.amount)} ETB</td>
                   <td>
-                    {can(user, "finance", "DELETE") ? (
-                      <button
-                        type="button"
-                        className="btn ghost"
-                        onClick={() => remove(row)}
-                      >
-                        Delete
-                      </button>
-                    ) : null}
+                    <div className="row-actions">
+                      {canUpdate ? (
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          disabled={busy}
+                          onClick={() => startEdit(row)}
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          disabled={busy}
+                          onClick={() => remove(row)}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

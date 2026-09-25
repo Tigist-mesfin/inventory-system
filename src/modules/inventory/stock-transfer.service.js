@@ -18,18 +18,22 @@ const emptyToNull = (value) => {
 };
 
 const assertWarehouses = async (sourceId, destId, user) => {
-  if (sourceId === destId) {
-    throw AppError.badRequest("Source and destination warehouses must differ");
-  }
   const [source, dest] = await Promise.all([
     Warehouse.findByPk(sourceId),
     Warehouse.findByPk(destId),
   ]);
-  tenant.assertOwned(user, source, "Warehouse not found");
-  tenant.assertOwned(user, dest, "Warehouse not found");
+  tenant.assertOwned(user, source, "Source warehouse not found");
+  tenant.assertOwned(user, dest, "Destination warehouse not found");
+  if (sourceId === destId) {
+    const label = source?.name || "this store";
+    throw AppError.badRequest(
+      `Cannot transfer within the same store. "${label}" is selected as both From and To — choose a different destination.`,
+    );
+  }
   if (source.status !== "ACTIVE" || dest.status !== "ACTIVE") {
     throw AppError.badRequest("Both warehouses must be active");
   }
+  return { source, dest };
 };
 
 const buildLines = async (items, user) => {
@@ -44,6 +48,7 @@ const buildLines = async (items, user) => {
     lines.push({
       productId: item.productId,
       quantity: decimal.qty(item.quantity),
+      product,
     });
   }
   return lines;

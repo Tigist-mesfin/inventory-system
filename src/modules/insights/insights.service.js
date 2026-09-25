@@ -447,10 +447,43 @@ exports.marketplace = async ({ search, warehouseId, brand, size, color }, user) 
 
 const dateKey = (value) => new Date(value).toISOString().slice(0, 10);
 
-const endOfDay = (value) => {
+/** YYYY-MM-DD from a date-only string or a Joi-parsed Date (UTC calendar day). */
+const calendarDayKey = (value) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
   const date = new Date(value);
-  if (String(value).length <= 10) date.setHours(23, 59, 59, 999);
-  return date;
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+};
+
+const startOfCalendarDay = (value) => {
+  const key = calendarDayKey(value);
+  if (!key) return value;
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+};
+
+/** Exclusive upper bound: start of the day after `value` (use with Op.lt). */
+const startOfNextCalendarDay = (value) => {
+  const key = calendarDayKey(value);
+  if (!key) return value;
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+};
+
+const endOfDay = (value) => {
+  const key = calendarDayKey(value);
+  if (!key) {
+    const date = new Date(value);
+    date.setHours(23, 59, 59, 999);
+    return date;
+  }
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59, 999);
 };
 
 const emptyBucket = (extra = {}) => ({
@@ -1234,16 +1267,17 @@ exports.vatReport = async ({ from, to } = {}, user) => {
   tenant.applyWarehouse(saleWhere, user);
   if (from || to) {
     saleWhere.saleDate = {};
-    if (from) saleWhere.saleDate[Op.gte] = from;
-    if (to) saleWhere.saleDate[Op.lte] = endOfDay(to);
+    // Inclusive calendar day: >= from 00:00:00 and < (to + 1 day) 00:00:00
+    if (from) saleWhere.saleDate[Op.gte] = startOfCalendarDay(from);
+    if (to) saleWhere.saleDate[Op.lt] = startOfNextCalendarDay(to);
   }
 
   const poWhere = { status: { [Op.ne]: "CANCELLED" } };
   tenant.applyCompany(poWhere, user);
   if (from || to) {
     poWhere.orderDate = {};
-    if (from) poWhere.orderDate[Op.gte] = from;
-    if (to) poWhere.orderDate[Op.lte] = endOfDay(to);
+    if (from) poWhere.orderDate[Op.gte] = startOfCalendarDay(from);
+    if (to) poWhere.orderDate[Op.lt] = startOfNextCalendarDay(to);
   }
 
   const [saleRows, purchaseRows] = await Promise.all([

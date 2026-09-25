@@ -163,6 +163,7 @@ export default function LineEditor({
   onChange,
   priceKey = "purchasePrice",
   lockPrice = false,
+  qtyOnly = false,
   addLabel = "Add another item",
   addClassName = "btn secondary",
   afterLine,
@@ -218,14 +219,24 @@ export default function LineEditor({
               <label className="field">
                 <span>Quantity {product ? `(${unit})` : ""}</span>
                 <input
-                  type="number"
-                  min="0.001"
-                  step="0.001"
-                  max={onHand != null ? onHand : undefined}
-                  value={line.quantity}
-                  onChange={(e) => update(index, { quantity: e.target.value })}
-                  required
-                />
+  type="number"
+  min="0.001"
+  step="0.001"
+  max={onHand != null ? onHand : undefined}
+  value={line.quantity}
+  onChange={(e) => {
+    e.currentTarget.setCustomValidity("");
+    update(index, { quantity: e.target.value });
+  }}
+  onInvalid={(e) => {
+    if (e.currentTarget.validity.rangeOverflow && onHand != null) {
+      e.currentTarget.setCustomValidity(
+        `Only ${qty(onHand)} ${unit} are available.`
+      );
+    }
+  }}
+  required
+/>
                 {showStock && product ? (
                   <span className="stock-hint">Available in store: {availableLabel}</span>
                 ) : null}

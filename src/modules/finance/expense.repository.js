@@ -28,14 +28,21 @@ const toPublic = (row) => {
 
 exports.toPublic = toPublic;
 
-exports.searchWhere = ({ search, category, paymentMethod, from, to }) => {
+exports.searchWhere = ({
+  search,
+  category,
+  paymentMethod,
+  from,
+  to,
+  toExclusive = false,
+}) => {
   const where = {};
   if (category) where.category = category;
   if (paymentMethod) where.paymentMethod = paymentMethod;
   if (from || to) {
     where.expenseDate = {};
     if (from) where.expenseDate[Op.gte] = from;
-    if (to) where.expenseDate[Op.lte] = to;
+    if (to) where.expenseDate[toExclusive ? Op.lt : Op.lte] = to;
   }
   if (search) {
     const like = { [Op.like]: `%${search}%` };
