@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 class AppException implements Exception {
   AppException(this.message, {this.code});
@@ -69,10 +70,14 @@ String mapDioError(DioException error, {String? serverUrl}) {
 }
 
 String _serverUnreachable(String? serverUrl) {
-  final url = (serverUrl == null || serverUrl.isEmpty) ? 'the server' : serverUrl;
-  return 'Cannot reach $url.\n'
-      '• Start the backend: npm run dev\n'
-      '• Android emulator: http://10.0.2.2:3000\n'
-      '• Physical phone: http://YOUR_PC_IP:3000 (same Wi‑Fi as this phone)\n'
-      'Your PC may be at http://192.168.1.10:3000 — use ipconfig to confirm.';
+  final url =
+      (serverUrl == null || serverUrl.isEmpty) ? 'the server' : serverUrl;
+  if (kDebugMode) {
+    return 'Cannot reach $url.\n'
+        '• Start the backend: npm run dev\n'
+        '• Android emulator: http://10.0.2.2:3000\n'
+        '• Physical phone: http://YOUR_PC_IP:3000 (same Wi‑Fi as this phone)\n'
+        'Your PC may be at http://192.168.1.10:3000 — use ipconfig to confirm.';
+  }
+  return 'Cannot reach $url. Check your internet connection and try again.';
 }

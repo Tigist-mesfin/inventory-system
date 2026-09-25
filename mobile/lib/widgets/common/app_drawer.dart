@@ -166,17 +166,6 @@ const kSideNavItems = <AppNavItem>[
     ],
   ),
   AppNavItem(
-    id: AppNavId.reports,
-    label: 'Reports',
-    icon: Icons.bar_chart_outlined,
-    any: [
-      ('sales', 'READ'),
-      ('purchasing', 'READ'),
-      ('insights', 'READ'),
-      ('finance', 'READ'),
-    ],
-  ),
-  AppNavItem(
     id: AppNavId.expenses,
     label: 'Expenses',
     icon: Icons.money_off_outlined,

@@ -85,7 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
             children: [
               const AuthLogoHeader(
-                title: 'Invontory',
+                title: 'Nigd Stock',
                 subtitle: 'Know every sack, size, and shilling.',
               ),
               const SizedBox(height: 22),
@@ -123,30 +123,31 @@ class _LoginScreenState extends State<LoginScreen> {
                         keyboardType: TextInputType.url,
                       ),
                       const SizedBox(height: 10),
-                    ],
-                    OutlinedButton.icon(
-                      onPressed:
-                          auth.testingConnection ? null : _testConnection,
-                      icon: auth.testingConnection
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.wifi_find_rounded),
-                      label: const Text('Test server connection'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.brand,
-                        side: BorderSide(
-                          color: AppColors.brand.withValues(alpha: 0.35),
-                        ),
-                        minimumSize: const Size.fromHeight(46),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                      OutlinedButton.icon(
+                        onPressed:
+                            auth.testingConnection ? null : _testConnection,
+                        icon: auth.testingConnection
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.wifi_find_rounded),
+                        label: const Text('Test server connection'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.brand,
+                          side: BorderSide(
+                            color: AppColors.brand.withValues(alpha: 0.35),
+                          ),
+                          minimumSize: const Size.fromHeight(46),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
+                      const SizedBox(height: 14),
+                    ],
                     TextField(
                       controller: _username,
                       decoration: const InputDecoration(
