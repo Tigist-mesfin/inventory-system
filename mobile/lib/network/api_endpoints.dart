@@ -1,6 +1,14 @@
 class ApiEndpoints {
   static const authLogin = '/api/auth/login';
+  static const authLoginOtpRequest = '/api/auth/login/otp/request';
+  static const authLoginOtpVerify = '/api/auth/login/otp/verify';
   static const authRegisterCompany = '/api/auth/register-company';
+  static const authRegisterVerifyOtp = '/api/auth/register-company/verify-otp';
+  static const authRegisterResendOtp = '/api/auth/register-company/resend-otp';
+  static const authForgotPassword = '/api/auth/forgot-password';
+  static const authForgotPasswordVerifyOtp =
+      '/api/auth/forgot-password/verify-otp';
+  static const authResetPassword = '/api/auth/reset-password';
   static const authRefresh = '/api/auth/refresh';
   static const authLogout = '/api/auth/logout';
   static const authMe = '/api/auth/me';

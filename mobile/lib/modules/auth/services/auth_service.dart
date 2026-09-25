@@ -1,8 +1,10 @@
 import '../../../core/errors/app_exception.dart';
 import '../../../core/services/api_logger.dart';
+import '../../../core/services/auth_token_parser.dart';
 import '../../../core/services/token_storage.dart';
 import '../../../network/api_endpoints.dart';
 import '../../../network/dio_client.dart';
+import '../models/otp_models.dart';
 
 class AuthService {
   AuthService({
@@ -22,44 +24,18 @@ class AuthService {
       ApiEndpoints.authLogin,
       body: {'username': username, 'password': password},
     );
-    final data = result.envelope['data'] as Map<String, dynamic>? ?? {};
-    final tokens = result.tokens;
-
-    if (tokens.isComplete || tokens.hasAccess) {
-      await _client.setSessionTokens(
-        accessToken: tokens.accessToken!,
-        refreshToken: tokens.refreshToken,
-      );
-    } else if (await _client.hasSession()) {
-      await _client.syncTokensFromCookies();
-      ApiLogger.info('Login OK via HTTP cookies only');
-    } else {
-      ApiLogger.info('Login failed: no tokens in JSON, headers, or cookies');
-      throw AppException(
-        'Login succeeded but no auth token was received. '
-        'Deploy the latest API to production, or check that login returns '
-        'accessToken in JSON or Set-Cookie headers.',
-      );
-    }
-
-    if (!await _client.hasSession()) {
-      throw AppException('Could not establish an authenticated session.');
-    }
-
-    final user = data['user'] as Map<String, dynamic>? ?? {};
-    if (user.isNotEmpty) {
-      await _tokenStorage.saveUser(user);
-    }
-    return user;
+    return _finalizeAuthSession(result);
   }
 
-  Future<Map<String, dynamic>> registerCompany({
+  /// Starts registration: creates PENDING user and sends REGISTRATION OTP.
+  /// Does not establish a session.
+  Future<OtpChallenge> registerCompany({
     required String name,
     required String phone,
     required String password,
     String address = '',
   }) async {
-    final result = await _client.postAuth(
+    final response = await _client.post(
       ApiEndpoints.authRegisterCompany,
       body: {
         'name': name,
@@ -68,6 +44,95 @@ class AuthService {
         if (address.trim().isNotEmpty) 'address': address.trim(),
       },
     );
+    final data = response['data'] as Map<String, dynamic>? ?? {};
+    final challenge = OtpChallenge.fromJson(data);
+    if (challenge.phone.isEmpty) {
+      throw AppException('Registration started but phone was missing.');
+    }
+    return challenge;
+  }
+
+  Future<Map<String, dynamic>> verifyRegistrationOtp({
+    required String phone,
+    required String otp,
+  }) async {
+    final result = await _client.postAuth(
+      ApiEndpoints.authRegisterVerifyOtp,
+      body: {'phone': phone, 'otp': otp},
+    );
+    return _finalizeAuthSession(result);
+  }
+
+  Future<OtpChallenge> resendRegistrationOtp({required String phone}) async {
+    final response = await _client.post(
+      ApiEndpoints.authRegisterResendOtp,
+      body: {'phone': phone},
+    );
+    final data = response['data'] as Map<String, dynamic>? ?? {};
+    return OtpChallenge.fromJson(data);
+  }
+
+  Future<OtpChallenge> requestLoginOtp({required String phone}) async {
+    final response = await _client.post(
+      ApiEndpoints.authLoginOtpRequest,
+      body: {'phone': phone},
+    );
+    final data = response['data'] as Map<String, dynamic>? ?? {};
+    return OtpChallenge.fromJson(data);
+  }
+
+  Future<Map<String, dynamic>> verifyLoginOtp({
+    required String phone,
+    required String otp,
+  }) async {
+    final result = await _client.postAuth(
+      ApiEndpoints.authLoginOtpVerify,
+      body: {'phone': phone, 'otp': otp},
+    );
+    return _finalizeAuthSession(result);
+  }
+
+  Future<OtpChallenge> requestPasswordResetOtp({required String phone}) async {
+    final response = await _client.post(
+      ApiEndpoints.authForgotPassword,
+      body: {'phone': phone},
+    );
+    final data = response['data'] as Map<String, dynamic>? ?? {};
+    return OtpChallenge.fromJson(data);
+  }
+
+  Future<String> verifyPasswordResetOtp({
+    required String phone,
+    required String otp,
+  }) async {
+    final response = await _client.post(
+      ApiEndpoints.authForgotPasswordVerifyOtp,
+      body: {'phone': phone, 'otp': otp},
+    );
+    final data = response['data'] as Map<String, dynamic>? ?? {};
+    final resetToken = data['resetToken']?.toString();
+    if (resetToken == null || resetToken.isEmpty) {
+      throw AppException('OTP verified but reset token was missing.');
+    }
+    return resetToken;
+  }
+
+  Future<void> resetPassword({
+    required String resetToken,
+    required String newPassword,
+  }) async {
+    await _client.post(
+      ApiEndpoints.authResetPassword,
+      body: {
+        'resetToken': resetToken,
+        'newPassword': newPassword,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> _finalizeAuthSession(
+    ({Map<String, dynamic> envelope, AuthTokens tokens}) result,
+  ) async {
     final data = result.envelope['data'] as Map<String, dynamic>? ?? {};
     final tokens = result.tokens;
 
@@ -78,10 +143,13 @@ class AuthService {
       );
     } else if (await _client.hasSession()) {
       await _client.syncTokensFromCookies();
-      ApiLogger.info('Register OK via HTTP cookies only');
+      ApiLogger.info('Auth OK via HTTP cookies only');
     } else {
+      ApiLogger.info('Auth failed: no tokens in JSON, headers, or cookies');
       throw AppException(
-        'Registration succeeded but no auth token was received.',
+        'Authentication succeeded but no auth token was received. '
+        'Deploy the latest API to production, or check that the response returns '
+        'accessToken in JSON or Set-Cookie headers.',
       );
     }
 
@@ -101,13 +169,13 @@ class AuthService {
   Future<Map<String, dynamic>?> restoreSession() async {
     await _client.loadSession();
 
-    final hasTokens = await _tokenStorage.hasAnyToken || await _client.hasSession();
+    final hasTokens =
+        await _tokenStorage.hasAnyToken || await _client.hasSession();
     if (!hasTokens) {
       ApiLogger.info('No stored session — login required');
       return null;
     }
 
-    // Access may be expired; refresh first if we only have refresh token.
     if (!_client.hasAccessToken) {
       final refreshed = await _client.refreshAccessToken();
       ApiLogger.info('Cold start refresh: ${refreshed != null}');
@@ -135,7 +203,6 @@ class AuthService {
 
       final cached = await _tokenStorage.loadUser();
       if (cached != null && !_isAuthExpiredError(error)) {
-        // Network / server down — keep user logged in with cached profile.
         ApiLogger.info('Using cached user profile (offline session)');
         return cached;
       }
@@ -147,7 +214,6 @@ class AuthService {
         return null;
       }
 
-      // Prefer staying logged in with cache when unsure.
       if (cached != null) {
         ApiLogger.info('Keeping cached session after ambiguous auth error');
         return cached;

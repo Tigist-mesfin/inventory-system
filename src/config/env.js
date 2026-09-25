@@ -55,4 +55,8 @@ module.exports = {
     (process.env.NODE_ENV === "production" ? "none" : "lax")
   ).toLowerCase(),
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || "*",
+
+  GEEZ_SMS_URL: process.env.GEEZ_SMS_URL || "",
+  GEEZ_SMS_TOKEN: process.env.GEEZ_SMS_TOKEN || "",
+  LOG_OTP: process.env.LOG_OTP === "true",
 };

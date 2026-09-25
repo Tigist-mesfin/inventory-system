@@ -42,3 +42,17 @@ exports.aiChatLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 20,
 });
+
+/** HTTP-level guard for OTP send endpoints (pair with otp.service resend cooldown). */
+exports.otpSendLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+});
+
+/** HTTP-level guard for OTP verify endpoints (pair with otp.service attempt limits). */
+exports.otpVerifyLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+});

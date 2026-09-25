@@ -211,7 +211,7 @@ class DioClient {
       final response = await _dio.get(path, queryParameters: query);
       return _unwrap(response);
     } on DioException catch (error) {
-      throw AppException(mapDioError(error, serverUrl: baseUrl));
+      throw appExceptionFromDio(error, serverUrl: baseUrl);
     }
   }
 
@@ -223,7 +223,7 @@ class DioClient {
       final response = await _dio.post(path, data: body);
       return _unwrap(response);
     } on DioException catch (error) {
-      throw AppException(mapDioError(error, serverUrl: baseUrl));
+      throw appExceptionFromDio(error, serverUrl: baseUrl);
     }
   }
 
@@ -235,7 +235,7 @@ class DioClient {
       final response = await _dio.patch(path, data: body);
       return _unwrap(response);
     } on DioException catch (error) {
-      throw AppException(mapDioError(error, serverUrl: baseUrl));
+      throw appExceptionFromDio(error, serverUrl: baseUrl);
     }
   }
 
@@ -244,7 +244,7 @@ class DioClient {
       final response = await _dio.delete(path);
       return _unwrap(response);
     } on DioException catch (error) {
-      throw AppException(mapDioError(error, serverUrl: baseUrl));
+      throw appExceptionFromDio(error, serverUrl: baseUrl);
     }
   }
 
@@ -275,7 +275,7 @@ class DioClient {
       }
       return (envelope: envelope, tokens: tokens);
     } on DioException catch (error) {
-      throw AppException(mapDioError(error, serverUrl: baseUrl));
+      throw appExceptionFromDio(error, serverUrl: baseUrl);
     }
   }
 
@@ -314,7 +314,8 @@ class DioClient {
       final message = error is Map
           ? (error['message']?.toString() ?? 'Request failed')
           : data['message']?.toString() ?? 'Request failed';
-      throw AppException(message);
+      final code = error is Map ? error['code']?.toString() : null;
+      throw AppException(message, code: code);
     }
     return data;
   }

@@ -6,6 +6,16 @@ const phoneNormalize = require("../../shared/helpers/phoneNormalize.helper");
 
 const { User } = models;
 
+const phoneLookupWhere = (rawPhone) => {
+  const raw = String(rawPhone || "").trim();
+  const phone = phoneNormalize(raw);
+  const or = [{ phone: raw }, { username: raw }];
+  if (phone && phone !== raw) {
+    or.push({ phone }, { username: phone });
+  }
+  return { [Op.or]: or };
+};
+
 exports.findByUsernameWithPassword = async (username) => {
   const raw = String(username || "").trim();
   const phone = phoneNormalize(raw);
@@ -15,6 +25,30 @@ exports.findByUsernameWithPassword = async (username) => {
   }
   return User.scope("withPassword").findOne({
     where: { [Op.or]: or },
+    include: userAccessInclude,
+  });
+};
+
+exports.findByPhone = async (phone) =>
+  User.findOne({
+    where: phoneLookupWhere(phone),
+    include: userAccessInclude,
+  });
+
+exports.findByPhoneWithPassword = async (phone) =>
+  User.scope("withPassword").findOne({
+    where: phoneLookupWhere(phone),
+    include: userAccessInclude,
+  });
+
+exports.findPendingByPhone = async (phone) => {
+  const normalized = phoneNormalize(phone) || String(phone || "").trim();
+  if (!normalized) return null;
+  return User.findOne({
+    where: {
+      status: "PENDING",
+      [Op.or]: [{ phone: normalized }, { username: normalized }],
+    },
     include: userAccessInclude,
   });
 };
@@ -45,6 +79,14 @@ exports.updatePassword = async (user, newPassword) => {
   user.password = newPassword;
   await user.save();
   return user;
+};
+
+exports.activateUser = async (userId) => {
+  await User.update(
+    { status: "ACTIVE" },
+    { where: { id: userId, status: "PENDING" } },
+  );
+  return exports.findByIdWithRoleAndPermissions(userId);
 };
 
 exports.toPublicUser = (user) => {

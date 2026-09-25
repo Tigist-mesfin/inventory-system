@@ -50,7 +50,7 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       status: {
-        type: DataTypes.ENUM("ACTIVE", "INACTIVE", "SUSPENDED"),
+        type: DataTypes.ENUM("ACTIVE", "INACTIVE", "SUSPENDED", "PENDING"),
         allowNull: false,
         defaultValue: "ACTIVE",
       },
@@ -221,6 +221,13 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "createdBy",
       as: "otherIncomes",
       onDelete: "RESTRICT",
+      onUpdate: "CASCADE",
+    });
+
+    User.hasMany(models.Otp, {
+      foreignKey: "userId",
+      as: "otps",
+      onDelete: "CASCADE",
       onUpdate: "CASCADE",
     });
   };

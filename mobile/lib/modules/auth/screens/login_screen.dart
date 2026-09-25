@@ -6,6 +6,8 @@ import '../../../core/config/app_config.dart';
 import '../../../widgets/common/empty_state.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/auth_brand.dart';
+import 'forgot_password_screen.dart';
+import 'login_otp_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -73,6 +75,20 @@ class _LoginScreenState extends State<LoginScreen> {
     context.read<AuthProvider>().clearError();
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const RegisterScreen()),
+    );
+  }
+
+  Future<void> _openLoginOtp() async {
+    context.read<AuthProvider>().clearError();
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LoginOtpScreen()),
+    );
+  }
+
+  Future<void> _openForgotPassword() async {
+    context.read<AuthProvider>().clearError();
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ForgotPasswordScreen()),
     );
   }
 
@@ -176,11 +192,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       obscureText: _obscure,
                       onSubmitted: (_) => _submit(),
                     ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: auth.loading ? null : _openForgotPassword,
+                        child: const Text(
+                          'Forgot Password?',
+                          style: TextStyle(
+                            color: AppColors.brand,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
                     if (auth.error != null) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 4),
                       ErrorBanner(message: auth.error!),
                     ],
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 12),
                     FilledButton(
                       onPressed: auth.loading ? null : _submit,
                       style: FilledButton.styleFrom(
@@ -207,6 +236,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                 fontSize: 16,
                               ),
                             ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: auth.loading ? null : _openLoginOtp,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.brand,
+                        side: BorderSide(
+                          color: AppColors.brand.withValues(alpha: 0.35),
+                        ),
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text(
+                        'Login with OTP',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
                     ),
                     const SizedBox(height: 14),
                     TextButton(

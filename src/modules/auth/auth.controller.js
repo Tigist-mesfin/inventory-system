@@ -8,6 +8,15 @@ const authService = require("./auth.service");
 
 exports.registerCompany = catchAsync(async (req, res) => {
   const result = await authService.registerCompany(req.body);
+  sendSuccess(res, {
+    data: result,
+    message: "Registration started. Verify the OTP sent to your phone.",
+    statusCode: 201,
+  });
+});
+
+exports.verifyRegistrationOtp = catchAsync(async (req, res) => {
+  const result = await authService.verifyRegistrationOtp(req.body);
   setAuthCookies(res, {
     accessToken: result.accessToken,
     refreshToken: result.refreshToken,
@@ -18,8 +27,15 @@ exports.registerCompany = catchAsync(async (req, res) => {
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
     },
-    message: "Company registered",
-    statusCode: 201,
+    message: "Registration verified",
+  });
+});
+
+exports.resendRegistrationOtp = catchAsync(async (req, res) => {
+  const result = await authService.resendRegistrationOtp(req.body);
+  sendSuccess(res, {
+    data: result,
+    message: "OTP resent",
   });
 });
 
@@ -36,6 +52,54 @@ exports.login = catchAsync(async (req, res) => {
       refreshToken: result.refreshToken,
     },
     message: "Logged in successfully",
+  });
+});
+
+exports.requestLoginOtp = catchAsync(async (req, res) => {
+  const result = await authService.requestLoginOtp(req.body);
+  sendSuccess(res, {
+    data: result,
+    message: "OTP sent",
+  });
+});
+
+exports.verifyLoginOtp = catchAsync(async (req, res) => {
+  const result = await authService.verifyLoginOtp(req.body);
+  setAuthCookies(res, {
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
+  });
+  sendSuccess(res, {
+    data: {
+      user: result.user,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    },
+    message: "Logged in successfully",
+  });
+});
+
+exports.forgotPassword = catchAsync(async (req, res) => {
+  const result = await authService.forgotPassword(req.body);
+  sendSuccess(res, {
+    data: result,
+    message: "Password reset OTP sent",
+  });
+});
+
+exports.verifyPasswordResetOtp = catchAsync(async (req, res) => {
+  const result = await authService.verifyPasswordResetOtp(req.body);
+  sendSuccess(res, {
+    data: result,
+    message: "OTP verified. You may reset your password.",
+  });
+});
+
+exports.resetPassword = catchAsync(async (req, res) => {
+  await authService.resetPassword(req.body);
+  sendSuccess(res, {
+    data: null,
+    message: "Password reset successfully",
   });
 });
 

@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import '../../../constants/app_colors.dart';
 import '../../../core/config/app_config.dart';
 import '../../../widgets/common/empty_state.dart';
+import '../models/otp_models.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/auth_brand.dart';
+import 'otp_verify_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -49,18 +51,53 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _submit() async {
     final auth = context.read<AuthProvider>();
-    final ok = await auth.registerCompany(
+    final phone = _phone.text.trim();
+    final challenge = await auth.registerCompany(
       name: _name.text.trim(),
-      phone: _phone.text.trim(),
+      phone: phone,
       address: _address.text.trim(),
       password: _password.text,
       baseUrl: _showUrlOverride ? _baseUrl.text.trim() : null,
     );
     if (!mounted) return;
-    if (ok) {
-      // RootScreen rebuilds to HomeShell once authenticated.
-      Navigator.of(context).popUntil((route) => route.isFirst);
+
+    if (challenge == null) {
+      // Pending account already exists (e.g. SMS failed earlier) — continue verification.
+      if (auth.errorCode == 'ACCOUNT_PENDING' && phone.isNotEmpty) {
+        auth.clearError();
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => OtpVerifyScreen(
+              phone: phone,
+              purpose: OtpPurpose.registration,
+              title: 'Verify your phone',
+              subtitle:
+                  'This phone is pending verification. Enter the OTP or resend a new code.',
+              initialCooldownSeconds: 0,
+              onVerified: (context) {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+            ),
+          ),
+        );
+      }
+      return;
     }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OtpVerifyScreen(
+          phone: challenge.phone.isNotEmpty ? challenge.phone : phone,
+          purpose: OtpPurpose.registration,
+          title: 'Verify your phone',
+          subtitle:
+              'We sent a 4-digit OTP to your phone. Verify to activate your company.',
+          onVerified: (context) {
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          },
+        ),
+      ),
+    );
   }
 
   @override

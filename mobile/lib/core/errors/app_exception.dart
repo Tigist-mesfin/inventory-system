@@ -32,7 +32,46 @@ String friendlyError(Object error, {String? serverUrl}) {
 }
 
 bool pathLooksLikeAuth(String path) {
-  return path.contains('/auth/login') || path.contains('/auth/refresh');
+  return path.contains('/auth/login') ||
+      path.contains('/auth/refresh') ||
+      path.contains('/auth/register-company') ||
+      path.contains('/auth/forgot-password') ||
+      path.contains('/auth/reset-password');
+}
+
+/// Backend OTP resend cooldown is 60s; parse "Please wait Ns…" when present.
+int otpResendCooldownSeconds({Object? error, int fallback = 60}) {
+  final message = error is AppException
+      ? error.message
+      : error?.toString() ?? '';
+  final match = RegExp(r'(\d+)\s*s', caseSensitive: false).firstMatch(message);
+  if (match != null) {
+    final parsed = int.tryParse(match.group(1)!);
+    if (parsed != null && parsed > 0) return parsed;
+  }
+  if (error is AppException && error.code == 'OTP_RESEND_COOLDOWN') {
+    return fallback;
+  }
+  return fallback;
+}
+
+AppException appExceptionFromDio(DioException error, {String? serverUrl}) {
+  final body = error.response?.data;
+  if (body is Map) {
+    final err = body['error'];
+    if (err is Map) {
+      final message = err['message']?.toString();
+      final code = err['code']?.toString();
+      if (message != null && message.isNotEmpty) {
+        return AppException(message, code: code);
+      }
+    }
+    final fallback = body['message']?.toString();
+    if (fallback != null && fallback.isNotEmpty) {
+      return AppException(fallback);
+    }
+  }
+  return AppException(mapDioError(error, serverUrl: serverUrl));
 }
 
 String mapDioError(DioException error, {String? serverUrl}) {
@@ -59,6 +98,9 @@ String mapDioError(DioException error, {String? serverUrl}) {
         return pathLooksLikeAuth(error.requestOptions.path)
             ? 'Invalid username or password.'
             : 'Session expired or not authorized. Please log in again.';
+      }
+      if (status == 429) {
+        return 'Too many requests. Please wait and try again.';
       }
       if (status != null) {
         return 'Server error ($status). Please try again.';
