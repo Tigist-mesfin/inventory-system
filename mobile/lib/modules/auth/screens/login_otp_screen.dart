@@ -118,7 +118,7 @@ class _LoginOtpScreenState extends State<LoginOtpScreen> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Use the phone linked to your account.',
+                      'Registered or new — we will text a code to sign you in.',
                       style: TextStyle(color: AppColors.inkSoft, height: 1.35),
                     ),
                     const SizedBox(height: 18),

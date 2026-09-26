@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const AppError = require("../../shared/errors/AppError");
 const {
   signAccessToken,
@@ -34,6 +35,8 @@ const normalizePhone = (raw) => {
   return phone;
 };
 
+const randomPassword = () => crypto.randomBytes(24).toString("base64url");
+
 const issueSession = async (user) => {
   const accessToken = signAccessToken({
     id: user.id,
@@ -57,23 +60,97 @@ const issueSession = async (user) => {
   };
 };
 
-const ensureOwnerRole = async () => {
-  let ownerRole = await models.Role.findOne({ where: { name: "COMPANY_OWNER" } });
+const ensureOwnerRole = async (transaction) => {
+  let ownerRole = await models.Role.findOne({
+    where: { name: "COMPANY_OWNER" },
+    transaction,
+  });
   if (!ownerRole) {
-    ownerRole = await models.Role.create({
-      name: "COMPANY_OWNER",
-      description: "Company owner with full access",
-      status: "ACTIVE",
+    ownerRole = await models.Role.create(
+      {
+        name: "COMPANY_OWNER",
+        description: "Company owner with full access",
+        status: "ACTIVE",
+      },
+      { transaction },
+    );
+    const permissions = await models.Permission.findAll({
+      where: { status: "ACTIVE" },
+      transaction,
     });
-    const permissions = await models.Permission.findAll({ where: { status: "ACTIVE" } });
     await models.RolePermission.bulkCreate(
       permissions.map((permission) => ({
         roleId: ownerRole.id,
         permissionId: permission.id,
       })),
+      { transaction },
     );
   }
   return ownerRole;
+};
+
+/**
+ * Create company + COMPANY_OWNER user (+ profile, payment methods, main warehouse).
+ * @returns {Promise<string>} new user id
+ */
+const provisionCompanyOwner = async ({
+  phone,
+  name,
+  address = null,
+  password,
+  status = "ACTIVE",
+  transaction,
+}) => {
+  const ownerRole = await ensureOwnerRole(transaction);
+  const company = await models.Company.create(
+    {
+      name,
+      phone,
+      address: address || null,
+      status: "ACTIVE",
+    },
+    { transaction },
+  );
+  const user = await models.User.create(
+    {
+      fullName: name,
+      username: phone,
+      phone,
+      password,
+      roleId: ownerRole.id,
+      companyId: company.id,
+      allWarehouses: true,
+      status,
+    },
+    { transaction },
+  );
+  await models.CompanyProfile.create(
+    {
+      companyId: company.id,
+      name,
+      phone,
+      address: address || null,
+    },
+    { transaction },
+  );
+  await models.PaymentMethod.bulkCreate(
+    ["CBE", "TELEBIRR", "ABYSSINIA BANK "].map((methodName) => ({
+      name: methodName,
+      status: "ACTIVE",
+      companyId: company.id,
+    })),
+    { transaction },
+  );
+  await models.Warehouse.create(
+    {
+      name: "Main store",
+      code: `MAIN-${String(company.id).replace(/-/g, "").slice(0, 8).toUpperCase()}`,
+      companyId: company.id,
+      status: "ACTIVE",
+    },
+    { transaction },
+  );
+  return user.id;
 };
 
 exports.login = async ({ username, password }) => {
@@ -129,59 +206,16 @@ exports.registerCompany = async (payload) => {
   const takenCompany = await models.Company.findOne({ where: { phone } });
   if (takenCompany) throw AppError.conflict("This phone is already registered");
 
-  const ownerRole = await ensureOwnerRole();
-
-  const userId = await sequelize.transaction(async (transaction) => {
-    const company = await models.Company.create(
-      {
-        name: payload.name,
-        phone,
-        address: payload.address || null,
-        status: "ACTIVE",
-      },
-      { transaction },
-    );
-    const user = await models.User.create(
-      {
-        fullName: payload.name,
-        username: phone,
-        phone,
-        password: payload.password,
-        roleId: ownerRole.id,
-        companyId: company.id,
-        allWarehouses: true,
-        status: "PENDING",
-      },
-      { transaction },
-    );
-    await models.CompanyProfile.create(
-      {
-        companyId: company.id,
-        name: payload.name,
-        phone,
-        address: payload.address || null,
-      },
-      { transaction },
-    );
-    await models.PaymentMethod.bulkCreate(
-      ["CBE", "TELEBIRR", "ABYSSINIA BANK "].map((name) => ({
-        name,
-        status: "ACTIVE",
-        companyId: company.id,
-      })),
-      { transaction },
-    );
-    await models.Warehouse.create(
-      {
-        name: "Main store",
-        code: `MAIN-${String(company.id).replace(/-/g, "").slice(0, 8).toUpperCase()}`,
-        companyId: company.id,
-        status: "ACTIVE",
-      },
-      { transaction },
-    );
-    return user.id;
-  });
+  const userId = await sequelize.transaction(async (transaction) =>
+    provisionCompanyOwner({
+      phone,
+      name: payload.name,
+      address: payload.address || null,
+      password: payload.password,
+      status: "PENDING",
+      transaction,
+    }),
+  );
 
   const otpResult = await otpService.sendOtp({
     userId,
@@ -249,25 +283,32 @@ exports.resendRegistrationOtp = async ({ phone }) => {
   };
 };
 
+/**
+ * Request a LOGIN OTP for any phone.
+ * - Existing ACTIVE / PENDING users: OTP bound to userId
+ * - Unregistered phones: OTP stored with userId=null; verify will auto-create account
+ */
 exports.requestLoginOtp = async ({ phone }) => {
   const normalizedPhone = normalizePhone(phone);
   const user = await authRepository.findByPhone(normalizedPhone);
 
-  if (!user) {
-    throw AppError.notFound("User not found", "USER_NOT_FOUND");
-  }
-  if (user.status === "PENDING") {
-    throw AppError.unauthorized(
-      "Verify your phone to activate your account",
-      "ACCOUNT_PENDING",
-    );
-  }
-  if (user.status !== "ACTIVE" || !user.role || user.role.status !== "ACTIVE") {
-    throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+  if (user) {
+    if (user.status === "INACTIVE" || user.status === "SUSPENDED") {
+      throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+    }
+    if (
+      user.status !== "ACTIVE" &&
+      user.status !== "PENDING"
+    ) {
+      throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+    }
+    if (!user.role || user.role.status !== "ACTIVE") {
+      throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+    }
   }
 
   const otpResult = await otpService.sendOtp({
-    userId: user.id,
+    userId: user?.id || null,
     phone: normalizedPhone,
     purpose: OTP_PURPOSES.LOGIN,
   });
@@ -276,26 +317,75 @@ exports.requestLoginOtp = async ({ phone }) => {
     phone: otpResult.phone,
     purpose: otpResult.purpose,
     expiresAt: otpResult.expiresAt,
+    isNewUser: !user,
   };
 };
 
+/**
+ * Verify LOGIN OTP and issue a session.
+ * Unregistered phones are provisioned as a new COMPANY_OWNER on first successful verify.
+ * PENDING users are activated.
+ */
 exports.verifyLoginOtp = async ({ phone, otp }) => {
   const normalizedPhone = normalizePhone(phone);
-  const user = await authRepository.findByPhone(normalizedPhone);
+  let user = await authRepository.findByPhone(normalizedPhone);
 
-  if (!user) {
-    throw AppError.notFound("User not found", "USER_NOT_FOUND");
-  }
-  if (user.status !== "ACTIVE" || !user.role || user.role.status !== "ACTIVE") {
-    throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+  if (user) {
+    if (user.status === "INACTIVE" || user.status === "SUSPENDED") {
+      throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+    }
+    if (!user.role || user.role.status !== "ACTIVE") {
+      throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+    }
   }
 
   await otpService.verifyOtp({
-    userId: user.id,
+    userId: user?.id || null,
     phone: normalizedPhone,
     purpose: OTP_PURPOSES.LOGIN,
     code: otp,
   });
+
+  if (!user) {
+    const takenCompany = await models.Company.findOne({
+      where: { phone: normalizedPhone },
+    });
+    if (takenCompany) {
+      throw AppError.conflict(
+        "This phone is already linked to a company",
+        "COMPANY_PHONE_TAKEN",
+      );
+    }
+
+    const userId = await sequelize.transaction(async (transaction) =>
+      provisionCompanyOwner({
+        phone: normalizedPhone,
+        name: `Company ${normalizedPhone}`,
+        password: randomPassword(),
+        status: "ACTIVE",
+        transaction,
+      }),
+    );
+    user = await authRepository.findByIdWithRoleAndPermissions(userId);
+    if (!user || !isLoginEligible(user)) {
+      throw AppError.badRequest(
+        "Unable to create account",
+        "ACCOUNT_PROVISION_FAILED",
+      );
+    }
+    return issueSession(user);
+  }
+
+  if (user.status === "PENDING") {
+    const activated = await authRepository.activateUser(user.id);
+    if (!activated || activated.status !== "ACTIVE") {
+      throw AppError.badRequest(
+        "Unable to activate account",
+        "ACCOUNT_ACTIVATION_FAILED",
+      );
+    }
+    return issueSession(activated);
+  }
 
   return issueSession(user);
 };

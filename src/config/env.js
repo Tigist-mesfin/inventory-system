@@ -58,5 +58,6 @@ module.exports = {
 
   GEEZ_SMS_URL: process.env.GEEZ_SMS_URL || "",
   GEEZ_SMS_TOKEN: process.env.GEEZ_SMS_TOKEN || "",
+  GEEZ_SMS_SHORTCODE_ID: process.env.GEEZ_SMS_SHORTCODE_ID || "",
   LOG_OTP: process.env.LOG_OTP === "true",
 };
