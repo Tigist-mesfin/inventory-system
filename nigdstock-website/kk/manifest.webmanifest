@@ -1,0 +1,23 @@
+{
+  "name": "Nigd Stock",
+  "short_name": "Nigd Stock",
+  "description": "AI-powered inventory management and stock control software for Ethiopian businesses.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4fbf6",
+  "theme_color": "#15803d",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/images/logo.png",
+      "type": "image/png",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.ico",
+      "type": "image/x-icon",
+      "sizes": "48x48"
+    }
+  ]
+}

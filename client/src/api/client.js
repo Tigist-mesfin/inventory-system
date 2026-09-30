@@ -16,8 +16,23 @@ function buildUrl(path, query) {
 }
 
 export function appUrl(path = "") {
-  const origin = APP || window.location.origin;
-  return `${origin}${path.startsWith("/") ? path : path ? `/${path}` : ""}`;
+  let origin = String(APP || (typeof window !== "undefined" ? window.location.origin : "")).replace(
+    /\/$/,
+    "",
+  );
+  if (origin && !/^https?:\/\//i.test(origin)) {
+    origin = `https://${origin}`;
+  }
+  const suffix = path.startsWith("/") ? path : path ? `/${path}` : "";
+  return `${origin}${suffix}`;
+}
+
+/** Absolute https URL for WhatsApp / Telegram (auto-link detection). */
+export function absoluteShareUrl(path = "") {
+  const url = appUrl(path).trim();
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  return `https://${url.replace(/^\/+/, "")}`;
 }
 
 export async function api(path, { method = "GET", body, query, formData } = {}) {

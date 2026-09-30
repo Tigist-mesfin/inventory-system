@@ -139,7 +139,7 @@ export default function AiDeskPage() {
           </p>
         </div>
         <Link className="btn saffron" to="/ai/assistant">
-         NegadaStock AI Assistant
+         Nigd StockAI Assistant
         </Link>
       </div>
 
@@ -413,8 +413,8 @@ export default function AiDeskPage() {
 
       <div className="card" style={{ marginTop: 16 }}>
         <h3 style={{ marginTop: 0 }}>Need a custom answer?</h3>
-        <p className="muted">Open the NegadaStock AI Assistant tab to ask free-form questions with Smart Clarify.</p>
-        <Link className="btn saffron" to="/ai/assistant">Open negade stock AI assistant</Link>
+        <p className="muted">Open the Nigd Stock AI Assistant tab to ask free-form questions with Smart Clarify.</p>
+        <Link className="btn saffron" to="/ai/assistant">Open Nigd stock AI assistant</Link>
       </div>
     </div>
   );

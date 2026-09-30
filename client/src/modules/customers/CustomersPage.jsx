@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, money } from "../../api/client";
 import InventoryLoading from "../../components/InventoryLoading";
 import { can } from "../../auth/access";
@@ -10,13 +10,23 @@ const TYPE_LABEL = {
   SUPPLIER: "Supplier",
 };
 
-const emptyForm = () => ({ name: "", phone: "", location: "", type: "CUSTOMER" });
+const emptyForm = (type = "CUSTOMER") => ({
+  name: "",
+  phone: "",
+  location: "",
+  type: type === "SUPPLIER" ? "SUPPLIER" : "CUSTOMER",
+});
 
 export default function CustomersPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const initialType =
+    String(searchParams.get("type") || "").toUpperCase() === "SUPPLIER"
+      ? "SUPPLIER"
+      : "CUSTOMER";
   const [parties, setParties] = useState([]);
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState(emptyForm());
+  const [form, setForm] = useState(() => emptyForm(initialType));
   const [editingId, setEditingId] = useState(null);
   const [payment, setPayment] = useState({ partyId: "", amount: "", method: "CASH" });
   const [error, setError] = useState("");
@@ -27,6 +37,14 @@ export default function CustomersPage() {
   const canCreate = can(user, "customers", "CREATE");
   const canUpdate = can(user, "customers", "UPDATE");
   const canDelete = can(user, "customers", "DELETE");
+
+  useEffect(() => {
+    if (editingId) return;
+    const raw = String(searchParams.get("type") || "").toUpperCase();
+    if (raw === "SUPPLIER" || raw === "CUSTOMER") {
+      setForm((prev) => (prev.type === raw ? prev : { ...prev, type: raw }));
+    }
+  }, [searchParams, editingId]);
 
   const load = (query = search) =>
     api("/api/customers", {
@@ -64,7 +82,7 @@ export default function CustomersPage() {
 
   const cancelEdit = () => {
     setEditingId(null);
-    setForm(emptyForm());
+    setForm(emptyForm(initialType));
     setFormError("");
   };
 

@@ -450,7 +450,7 @@ export default function AiAssistantPage() {
     <div className="ai-desk">
       <div className="topbar">
         <div>
-          <h1 style={{ margin: 0 }}>NegadaStock AI Assistant</h1>
+          <h1 style={{ margin: 0 }}>Nigd Stock AI Assistant</h1>
           <p className="muted">
             Ask free-form questions about your company data. Read-only and company-scoped.
           </p>

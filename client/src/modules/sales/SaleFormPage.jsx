@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { api, money, qty, VAT_RATE, vatOf, withVat } from "../../api/client";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { api, money, qty, withVat } from "../../api/client";
 import LineEditor, { emptyLine, lineAmount, VatSummary } from "../../components/LineEditor";
 import SaleLotChoice from "../../components/SaleLotChoice";
 import InventoryLoading from "../../components/InventoryLoading";
-
-const STEPS = [
-  { id: "form", label: "Items" },
-  { id: "review", label: "Review" },
-];
+import { useAuth } from "../../auth/AuthContext";
+import { can, isSalesman } from "../../auth/access";
+import PartySelectField from "../../components/PartySelectField";
 
 const qtyInStore = (row, warehouseId) => {
   if (!warehouseId) return Number(row.quantity || 0);
@@ -22,6 +20,7 @@ const qtyInStore = (row, warehouseId) => {
 };
 
 const warehouseWithStock = (warehouses, items) => {
+  if (warehouses?.length === 1) return warehouses[0].id || "";
   const qtyByStore = new Map();
   for (const row of items || []) {
     const stores = row.stores?.length
@@ -32,10 +31,12 @@ const warehouseWithStock = (warehouses, items) => {
     for (const store of stores) {
       const onHand = Number(store.quantity || 0);
       if (onHand <= 0 || !store.warehouseId) continue;
-      qtyByStore.set(
-        store.warehouseId,
-        (qtyByStore.get(store.warehouseId) || 0) + onHand,
-      );
+      const id = String(store.warehouseId);
+      // Prefer stock only among the warehouses the user can use
+      if (warehouses?.length && !warehouses.some((w) => String(w.id) === id)) {
+        continue;
+      }
+      qtyByStore.set(id, (qtyByStore.get(id) || 0) + onHand);
     }
   }
   let best = null;
@@ -46,32 +47,15 @@ const warehouseWithStock = (warehouses, items) => {
   return warehouses?.[0]?.id || "";
 };
 
-function SaleSteps({ current }) {
-  const index = STEPS.findIndex((row) => row.id === current);
-  return (
-    <ol className="sale-steps">
-      {STEPS.map((row, i) => (
-        <li
-          key={row.id}
-          className={i === index ? "is-current" : i < index ? "is-done" : ""}
-        >
-          <span>{i + 1}</span>
-          {row.label}
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 export default function SaleFormPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { id: editId } = useParams();
   const editing = Boolean(editId);
   const [warehouses, setWarehouses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [party, setParty] = useState("registered");
-  const [step, setStep] = useState("form");
   const [paidAmount, setPaidAmount] = useState("");
   const [form, setForm] = useState({
     warehouseId: "",
@@ -86,6 +70,10 @@ export default function SaleFormPage() {
   const [costing, setCosting] = useState({});
   const [payFrom, setPayFrom] = useState("direct");
   const [ready, setReady] = useState(false);
+
+  const canAddProduct = can(user, "catalog", "CREATE") || can(user, "catalog", "READ");
+  const canBuyStock = can(user, "purchasing", "CREATE") || can(user, "purchasing", "READ");
+  const canViewStock = can(user, "inventory", "READ");
 
   const stockByProduct = useMemo(() => {
     const map = {};
@@ -120,45 +108,88 @@ export default function SaleFormPage() {
 
   const filledItems = form.items.filter((line) => line.productId);
   const subtotal = filledItems.reduce((sum, line) => sum + lineAmount(line), 0);
-  const vatAmount = vatOf(subtotal);
   const grandTotal = withVat(subtotal);
   const selectedCustomer = customers.find((row) => row.id === form.customerId);
   const walletBalance = Number(selectedCustomer?.walletBalance || 0);
   const paid = Number(paidAmount === "" ? grandTotal : paidAmount);
   const remaining = Math.max(0, grandTotal - paid);
+  const selectedWarehouse = warehouses.find(
+    (row) => String(row.id) === String(form.warehouseId),
+  );
+  const noItemsInStore = Boolean(form.warehouseId) && products.length === 0;
 
   useEffect(() => {
+    const sessionStores = (user?.warehouses || []).map((store) => ({
+      id: store.id,
+      name: store.name,
+      code: store.code,
+    }));
+
     Promise.all([
-      api("/api/warehouses"),
+      api("/api/warehouses").catch(() => ({ data: { warehouses: [] } })),
       api("/api/customers", { query: { type: "CUSTOMER", status: "ACTIVE", limit: 100 } }).catch(
         () => ({ data: { customers: [] } }),
       ),
       api("/api/payment-methods", { query: { status: "ACTIVE" } }).catch(
         () => ({ data: { paymentMethods: [] } }),
       ),
-      api("/api/inventory/by-item", { query: { limit: 500 } }),
+      api("/api/inventory/by-item", { query: { limit: 500 } }).catch(
+        () => ({ data: { items: [] } }),
+      ),
     ])
       .then(([w, c, m, inv]) => {
-        const warehouseRows = w.data.warehouses || [];
+        let warehouseRows = w.data.warehouses || [];
+        // Salesmen: always prefer assigned stores from session if API list is empty
+        if (!warehouseRows.length && sessionStores.length) {
+          warehouseRows = sessionStores;
+        }
+        if (
+          isSalesman(user) &&
+          !user?.allWarehouses &&
+          sessionStores.length &&
+          warehouseRows.length
+        ) {
+          const allowed = new Set(sessionStores.map((store) => String(store.id)));
+          const filtered = warehouseRows.filter((store) => allowed.has(String(store.id)));
+          if (filtered.length) warehouseRows = filtered;
+        }
+
         const items = (inv.data.items || []).filter(
           (row) => Number(row.quantity) > 0 && row.product,
         );
         setWarehouses(warehouseRows);
-        setCustomers(c.data.customers);
+        setCustomers(c.data.customers || []);
         setMethods(m.data.paymentMethods || []);
         setInventory(items);
+
+        const customerRows = c.data.customers || [];
+        if (!customerRows.length) {
+          setParty("walkin");
+        }
+
+        const autoWarehouseId =
+          warehouseRows.length === 1
+            ? warehouseRows[0].id
+            : warehouseWithStock(warehouseRows, items);
+
         setForm((prev) => ({
           ...prev,
-          warehouseId: prev.warehouseId || warehouseWithStock(warehouseRows, items),
+          warehouseId: prev.warehouseId || autoWarehouseId || "",
           customerId: editId ? prev.customerId : "",
           paymentMethod: prev.paymentMethod || m.data.paymentMethods?.[0]?.name || "CASH",
         }));
+
+        if (!warehouseRows.length && isSalesman(user)) {
+          setError(
+            "No store is assigned to your account. Ask the company owner to assign a store in Team.",
+          );
+        }
       })
       .catch((err) => setError(err.message))
       .finally(() => {
         if (!editId) setReady(true);
       });
-  }, [editId]);
+  }, [editId, user?.id, user?.allWarehouses, user?.warehouses]);
 
   useEffect(() => {
     if (!editId) return undefined;
@@ -242,13 +273,16 @@ export default function SaleFormPage() {
     setPayFrom(value);
   };
 
-  const goReview = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
+    setBusy(true);
     setError("");
     try {
       if (!filledItems.length) throw new Error("Add at least one item");
       validateStock();
       validateLots();
+
+      let amountPaid = paidAmount;
       if (payFrom === "wallet") {
         if (party !== "registered" || !form.customerId) {
           throw new Error("Choose a registered customer to deduct from wallet");
@@ -256,34 +290,28 @@ export default function SaleFormPage() {
         if (walletBalance <= 0) {
           throw new Error("This customer has no wallet balance. Recharge the wallet first.");
         }
-        setPaidAmount(String(Math.min(walletBalance, grandTotal).toFixed(2)));
-      } else {
-        setPaidAmount(String(grandTotal.toFixed(2)));
+        if (amountPaid === "") {
+          amountPaid = String(Math.min(walletBalance, grandTotal).toFixed(2));
+          setPaidAmount(amountPaid);
+        }
+      } else if (amountPaid === "") {
+        amountPaid = String(grandTotal.toFixed(2));
+        setPaidAmount(amountPaid);
       }
-      setStep("review");
-    } catch (err) {
-      setError(err.message);
-    }
-  };
 
-  const submit = async (event) => {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      if (Number.isNaN(paid) || paid < 0) throw new Error("Enter a valid amount paid");
-      if (paid > grandTotal) throw new Error("Amount paid cannot be more than the grand total");
-      if (payFrom === "wallet" && paid > walletBalance) {
+      const paidNow = Number(amountPaid);
+      if (Number.isNaN(paidNow) || paidNow < 0) throw new Error("Enter a valid amount paid");
+      if (paidNow > grandTotal) throw new Error("Amount paid cannot be more than the grand total");
+      if (payFrom === "wallet" && paidNow > walletBalance) {
         throw new Error(`Wallet only has ${money(walletBalance)} ETB`);
       }
-      validateStock();
-      validateLots();
+
       const saleBody = {
         warehouseId: form.warehouseId,
         customerId: party === "registered" ? form.customerId || null : null,
         customerName: party === "walkin" ? form.walkInName : undefined,
         paymentMethod: payFrom === "wallet" ? "WALLET" : form.paymentMethod,
-        paidAmount: paid,
+        paidAmount: paidNow,
         payFrom: payFrom === "wallet" ? "WALLET" : "DIRECT",
         costingMethod: "SIMPLE",
         items: filledItems.map((item) => {
@@ -329,7 +357,7 @@ export default function SaleFormPage() {
         saved = await api(`/api/sales/${created.data.sale.id}/complete`, {
           method: "POST",
           body: {
-            paidAmount: paid,
+            paidAmount: paidNow,
             payFrom: saleBody.payFrom,
             costingMethod: "SIMPLE",
             items: saleBody.items.map((item) => ({
@@ -381,115 +409,12 @@ export default function SaleFormPage() {
     </div>
   );
 
-  if (step === "review") {
-    return (
-      <form className="card" onSubmit={submit}>
-        <h1>{editing ? "Review edited sale" : "Review sale"}</h1>
-        <SaleSteps current="review" />
-        <p className="muted">Check items, payment, and purchase lots, then save.</p>
-
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>Price</th>
-                <th>Amount</th>
-                <th>VAT {VAT_RATE}%</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filledItems.map((line) => {
-                const product = products.find((p) => p.id === line.productId);
-                return (
-                  <tr key={line.productId}>
-                    <td>{product?.name}</td>
-                    <td>{qty(line.quantity)} {product?.unit}</td>
-                    <td>{money(line.unitPrice)}</td>
-                    <td>{money(lineAmount(line))} ETB</td>
-                    <td>{money(vatOf(lineAmount(line)))} ETB</td>
-                    <td>{money(withVat(lineAmount(line)))} ETB</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="totals-box" style={{ marginTop: 16 }}>
-          <p>Subtotal: <strong>{money(subtotal)} ETB</strong></p>
-          <p>VAT {VAT_RATE}%: <strong>{money(vatAmount)} ETB</strong></p>
-          <p>Grand total: <strong>{money(grandTotal)} ETB</strong></p>
-          <p className="muted" style={{ marginBottom: 0 }}>
-            Payment: {payFrom === "wallet" ? "Wallet" : form.paymentMethod}
-            {party === "registered"
-              ? ` · ${selectedCustomer?.name || ""}`
-              : ` · ${form.walkInName}`}
-            {payFrom === "wallet"
-              ? ` · wallet left after this sale ${money(Math.max(0, walletBalance - paid))} ETB`
-              : ""}
-          </p>
-        </div>
-
-        <label className="field" style={{ marginTop: 16 }}>
-          <span>Amount paid (ETB)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            max={grandTotal}
-            value={paidAmount}
-            onChange={(e) => setPaidAmount(e.target.value)}
-            required
-          />
-        </label>
-        <p className={remaining > 0 ? "error" : "muted"}>
-          Remaining to pay: <strong>{money(remaining)} ETB</strong>
-          {remaining > 0 && party === "registered"
-            ? " — this customer will be recorded as partially paid."
-            : remaining > 0
-              ? " — remaining balance is kept on this invoice."
-              : " — fully paid."}
-        </p>
-
-        {error ? <p className="error">{error}</p> : null}
-        <div className="row-actions" style={{ marginTop: 16 }}>
-          <button type="button" className="btn secondary" onClick={() => setStep("form")} disabled={busy}>
-            Back
-          </button>
-          <button className="btn saffron" disabled={busy}>
-            {busy ? "Saving sale…" : editing ? "Save changes" : "Save sale"}
-          </button>
-        </div>
-      </form>
-    );
-  }
-
   return (
-    <form className="card" onSubmit={goReview}>
+    <form className="card" onSubmit={submit}>
       <h1>{editing ? "Edit sale" : "Add new sale"}</h1>
-      <SaleSteps current="form" />
       <p className="muted">
         Only items that currently have quantity in the selected store can be sold.
       </p>
-
-      <div className="seg">
-        <button type="button" className={`btn ${party === "registered" ? "" : "secondary"}`} onClick={() => setParty("registered")}>
-          Customer from list
-        </button>
-        <button
-          type="button"
-          className={`btn ${party === "walkin" ? "" : "secondary"}`}
-          onClick={() => {
-            setParty("walkin");
-            setPayFrom("direct");
-          }}
-        >
-          Walk-in customer
-        </button>
-      </div>
 
       <div className="grid split" style={{ marginTop: 14 }}>
         <label className="field">
@@ -505,11 +430,25 @@ export default function SaleFormPage() {
               }));
               setCosting({});
             }}
+            required
+            disabled={warehouses.length === 1}
           >
+            {warehouses.length === 0 ? (
+              <option value="">No store assigned</option>
+            ) : null}
+            {warehouses.length > 1 ? (
+              <option value="">Select store</option>
+            ) : null}
             {warehouses.map((w) => (
               <option key={w.id} value={w.id}>{w.name}</option>
             ))}
           </select>
+          {warehouses.length === 1 ? (
+            <small className="muted">
+              Your assigned store is selected automatically
+              {selectedWarehouse?.name ? `: ${selectedWarehouse.name}` : ""}.
+            </small>
+          ) : null}
           {products.length === 0 && storesWithStock.length > 0 ? (
             <small className="muted">
               This store has no items. Live stock is in{" "}
@@ -521,32 +460,37 @@ export default function SaleFormPage() {
             </small>
           ) : products.length === 0 && inventory.length === 0 ? (
             <small className="muted">
-              No delivered stock to sell. If Live stock is showing Undelivered purchases, deliver them to a store first.
+              No delivered stock to sell. Add a product first, then buy or deliver stock into this store.
             </small>
           ) : null}
         </label>
-        {party === "registered" ? (
-          <label className="field">
-            <span>Customer from list</span>
-            <select value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })} required>
-              <option value="">Select customer</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.phone ? `· ${c.phone}` : ""} · wallet {money(c.walletBalance)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <label className="field">
-            <span>Walk-in customer name</span>
-            <input
-              value={form.walkInName}
-              onChange={(e) => setForm({ ...form, walkInName: e.target.value })}
-              required
-            />
-          </label>
-        )}
+        <PartySelectField
+          options={customers.map((c) => ({
+            id: c.id,
+            name: `${c.name}${c.phone ? ` · ${c.phone}` : ""} · wallet ${money(c.walletBalance)}`,
+          }))}
+          party={party}
+          onPartyChange={(next) => {
+            setParty(next);
+            if (next === "walkin") setPayFrom("direct");
+            if (next === "registered") {
+              setForm((prev) => ({ ...prev, walkInName: "" }));
+            } else {
+              setForm((prev) => ({ ...prev, customerId: "" }));
+            }
+          }}
+          valueId={form.customerId}
+          onValueIdChange={(customerId) => setForm((prev) => ({ ...prev, customerId }))}
+          walkInName={form.walkInName}
+          onWalkInNameChange={(walkInName) => setForm((prev) => ({ ...prev, walkInName }))}
+          selectLabel="Customer"
+          walkInLabel="Walk-in customer (not in list)"
+          walkInNameLabel="Walk-in customer name"
+          walkInPlaceholder="Customer name"
+          emptySelectText="No customers yet"
+          registerTo="/customers?type=CUSTOMER"
+          registerLabel="Register customer"
+        />
         {payChecks}
         {payFrom === "direct" ? (
           <label className="field">
@@ -566,15 +510,50 @@ export default function SaleFormPage() {
       </div>
 
       <h3>Items sold</h3>
+      {noItemsInStore ? (
+        <div className="card" style={{ marginBottom: 14, background: "var(--surface-2, #f8fafc)" }}>
+          <p style={{ margin: 0 }}>
+            <strong>No items in this store to sell.</strong>
+          </p>
+          <p className="muted" style={{ marginTop: 6 }}>
+            Add a product first, then purchase / deliver stock into{" "}
+            {selectedWarehouse?.name || "this store"} before creating a sale.
+          </p>
+          <div className="row-actions" style={{ marginTop: 12 }}>
+            {canAddProduct ? (
+              <Link className="btn secondary add-item-btn-sm" to="/catalog">
+                Add new item
+              </Link>
+            ) : null}
+            {canBuyStock ? (
+              <Link className="btn secondary" to="/buy">
+                Buy stock
+              </Link>
+            ) : null}
+            {canViewStock ? (
+              <Link className="btn secondary" to="/stock">
+                Open live stock
+              </Link>
+            ) : null}
+            {!canAddProduct && !canBuyStock && !canViewStock ? (
+              <p className="muted" style={{ margin: 0 }}>
+                Ask the company owner to add products and stock for your store.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       <LineEditor
         products={products}
         stockByProduct={stockByProduct}
         inStockOnly
-        emptyText="No items with quantity in this store."
+        emptyText="No items with quantity in this store. Add a new item first."
         lines={form.items}
         onChange={(items) => setForm({ ...form, items })}
         priceKey="sellingPrice"
         lockPrice
+        addLabel="Add item"
+        addClassName="btn secondary add-item-btn-sm"
         afterLine={(line) => {
           if (!line.productId) return null;
           const product = products.find((p) => p.id === line.productId);
@@ -610,13 +589,36 @@ export default function SaleFormPage() {
 
       <VatSummary lines={filledItems} products={products} />
 
+      <label className="field" style={{ marginTop: 16 }}>
+        <span>Amount paid (ETB)</span>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          max={grandTotal || undefined}
+          value={paidAmount}
+          onChange={(e) => setPaidAmount(e.target.value)}
+          placeholder={money(grandTotal)}
+        />
+      </label>
+      <p className={remaining > 0 ? "error" : "muted"}>
+        Remaining to pay: <strong>{money(remaining)} ETB</strong>
+        {remaining > 0 && party === "registered"
+          ? " — this customer will be recorded as partially paid."
+          : remaining > 0
+            ? " — remaining balance is kept on this invoice."
+            : filledItems.length
+              ? " — fully paid."
+              : ""}
+      </p>
+
       {error ? <p className="error">{error}</p> : null}
-      <div className="row-actions" style={{ marginTop: 16 }}>
-        <button type="button" className="btn secondary" onClick={() => navigate("/sell")}>
+      <div className="row-actions sale-form-actions" style={{ marginTop: 16 }}>
+        <button type="button" className="btn secondary" onClick={() => navigate("/sell")} disabled={busy}>
           Cancel
         </button>
-        <button className="btn saffron">
-          Review sale
+        <button className="btn saffron" disabled={busy || !filledItems.length}>
+          {busy ? "Saving sale…" : editing ? "Save changes" : "Save sale"}
         </button>
       </div>
     </form>

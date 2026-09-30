@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { documentVat, money, qty, vatOf, withVat } from "../api/client";
+import { absoluteShareUrl, documentVat, money, qty, vatOf, withVat } from "../api/client";
 import DesignerCredit from "./DesignerCredit";
 
 const STATUS_LABEL = {
@@ -34,22 +34,29 @@ function shareText({ company, order, totals, url, includeUrl = true }) {
   const lines = [
     `${company?.name || "Proforma"} · ${order.orderNumber}`,
     `${order.customerName} · Total ${money(totals.total)} ETB`,
-    "",
-    "You can see the details here:",
   ];
-  if (includeUrl && url) lines.push(url);
+  if (includeUrl && url) {
+    lines.push("", "Open receipt:", "", url);
+  } else {
+    lines.push("", "Open receipt:");
+  }
   return lines.join("\n");
 }
 
 export default function ProformaSheet({
   company,
   order,
-  shareUrl,
+  shareUrl: shareUrlProp,
   backTo,
 }) {
   const [copied, setCopied] = useState("");
   const totals = documentVat(order || {});
   const items = order.items || [];
+  const shareUrl = shareUrlProp
+    ? (/^https?:\/\//i.test(shareUrlProp)
+        ? String(shareUrlProp).replace(/\?.*$/, "")
+        : absoluteShareUrl(shareUrlProp))
+    : "";
 
   const copyLink = async () => {
     if (!shareUrl) return;
@@ -72,32 +79,32 @@ export default function ProformaSheet({
   };
 
   const shareTelegram = () => {
-    const caption = shareText({
+    const text = shareText({
       company,
       order,
       totals,
       url: shareUrl,
-      includeUrl: false,
+      includeUrl: true,
     });
     const params = new URLSearchParams();
     if (shareUrl) params.set("url", shareUrl);
-    params.set("text", caption);
+    params.set("text", text);
     window.open(`https://t.me/share/url?${params.toString()}`, "_blank", "noopener,noreferrer");
   };
 
   const shareNative = async () => {
-    const caption = shareText({
+    const message = shareText({
       company,
       order,
       totals,
       url: shareUrl,
-      includeUrl: false,
+      includeUrl: true,
     });
     if (navigator.share) {
       try {
         await navigator.share({
           title: `Proforma ${order.orderNumber}`,
-          text: caption,
+          text: message,
           url: shareUrl || undefined,
         });
         return;

@@ -30,32 +30,56 @@ export default function PaymentMethodsPage() {
   };
 
   const toggle = async (row) => {
-    await api(`/api/payment-methods/${row.id}`, {
-      method: "PATCH",
-      body: { status: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" },
-    });
-    await load();
+    if (row.isDefault) return;
+    setError("");
+    try {
+      await api(`/api/payment-methods/${row.id}`, {
+        method: "PATCH",
+        body: { status: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" },
+      });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   if (!ready) return <InventoryLoading message="Loading inventory..." />;
+
+  const defaults = rows.filter((row) => row.isDefault);
+  const custom = rows.filter((row) => !row.isDefault);
 
   return (
     <>
       <div className="topbar">
         <div>
           <h1 style={{ margin: 0 }}>Payment methods</h1>
-          <p className="muted">Admin-managed methods used when approving customer orders and sales.</p>
+          <p className="muted">
+            System defaults are available to every company. You can also add your own methods —
+            both appear on sales, purchases, and wallets.
+          </p>
         </div>
       </div>
+
       <form className="card" onSubmit={add}>
         <label className="field">
-          <span>New method name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Telebirr" required />
+          <span>Add your company method</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. My shop Telebirr"
+            required
+            minLength={2}
+            maxLength={64}
+          />
         </label>
         {error ? <p className="error">{error}</p> : null}
-        <button className="btn saffron" style={{ marginTop: 12 }}>Add method</button>
+        <button className="btn saffron" style={{ marginTop: 12 }}>
+          Add method
+        </button>
       </form>
+
       <div className="card table-wrap" style={{ marginTop: 16 }}>
+        <h3 style={{ margin: "0 0 10px" }}>System defaults</h3>
         <table>
           <thead>
             <tr>
@@ -65,7 +89,41 @@ export default function PaymentMethodsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {defaults.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  {row.name}{" "}
+                  <span className="pill" style={{ marginLeft: 6, fontSize: 11 }}>
+                    Default
+                  </span>
+                </td>
+                <td>{row.status}</td>
+                <td className="muted">Shared for all companies</td>
+              </tr>
+            ))}
+            {!defaults.length ? (
+              <tr>
+                <td colSpan={3} className="muted">
+                  No defaults loaded yet — refresh the page.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card table-wrap" style={{ marginTop: 16 }}>
+        <h3 style={{ margin: "0 0 10px" }}>Your company methods</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {custom.map((row) => (
               <tr key={row.id}>
                 <td>{row.name}</td>
                 <td>{row.status}</td>
@@ -76,6 +134,13 @@ export default function PaymentMethodsPage() {
                 </td>
               </tr>
             ))}
+            {!custom.length ? (
+              <tr>
+                <td colSpan={3} className="muted">
+                  No custom methods yet. Add one above if you need something beyond the defaults.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

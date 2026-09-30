@@ -52,6 +52,23 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Clears cached catalog and offline drafts after account deletion / sign-out wipe.
+  Future<void> clearAllLocalData() async {
+    await transaction(() async {
+      await delete(localSaleItems).go();
+      await delete(localSales).go();
+      await delete(localPurchaseItems).go();
+      await delete(localPurchases).go();
+      await delete(inventoryCache).go();
+      await delete(customersCache).go();
+      await delete(paymentMethodsCache).go();
+      await delete(suppliersCache).go();
+      await delete(warehousesCache).go();
+      await delete(productsCache).go();
+      await delete(syncMetadata).go();
+    });
+  }
+
   Future<int> pendingCount() async {
     final purchases = await (select(localPurchases)
           ..where((t) => t.syncStatus.isIn(['pending', 'failed'])))

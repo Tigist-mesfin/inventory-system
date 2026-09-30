@@ -5,6 +5,7 @@ import LineEditor, { emptyLine, lineAmount, VatSummary } from "../../components/
 import { can, isOwner } from "../../auth/access";
 import { useAuth } from "../../auth/AuthContext";
 import InventoryLoading from "../../components/InventoryLoading";
+import PartySelectField from "../../components/PartySelectField";
 
 const STATUS_LABEL = {
   NOT_DELIVERED: "Not delivered",
@@ -170,6 +171,8 @@ export default function PurchasingPage() {
   const [party, setParty] = useState("registered");
   const [supplierId, setSupplierId] = useState("");
   const [walkInName, setWalkInName] = useState("");
+  const [warehouseId, setWarehouseId] = useState("");
+  const [dontDeliver, setDontDeliver] = useState(false);
   const [deliverWarehouseId, setDeliverWarehouseId] = useState("");
   const [lines, setLines] = useState([emptyLine()]);
   const [filters, setFilters] = useState({ from: "", to: "", productId: "", paymentMethod: "", createdBy: "" });
@@ -189,9 +192,28 @@ export default function PurchasingPage() {
   const [showAllColumns, setShowAllColumns] = useState(
     () => typeof window !== "undefined" && window.matchMedia("(min-width: 900px)").matches,
   );
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 899px)").matches,
+  );
+  const [showAnalysis, setShowAnalysis] = useState(
+    () => typeof window === "undefined" || !window.matchMedia("(max-width: 899px)").matches,
+  );
 
   const subtotal = lines.reduce((sum, line) => sum + lineAmount(line), 0);
   const grandTotal = withVat(subtotal);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mq = window.matchMedia("(max-width: 899px)");
+    const sync = () => {
+      const mobile = mq.matches;
+      setIsMobile(mobile);
+      setShowAnalysis(!mobile);
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     setPaidAmount(grandTotal ? grandTotal.toFixed(2) : "");
@@ -199,7 +221,7 @@ export default function PurchasingPage() {
 
   const loadLookups = async () => {
     const [s, p, w, m, team] = await Promise.all([
-      api("/api/suppliers", { query: { status: "ACTIVE" } }),
+      api("/api/suppliers", { query: { status: "ACTIVE" } }).catch(() => ({ data: { suppliers: [] } })),
       api("/api/products", { query: { limit: 100, status: "ACTIVE" } }),
       api("/api/warehouses"),
       api("/api/payment-methods", { query: { status: "ACTIVE" } }),
@@ -207,13 +229,24 @@ export default function PurchasingPage() {
     ]);
     const supplierRows = (s.data.suppliers || []).filter((row) => row.name !== "Walk-in");
     const methodRows = m.data.paymentMethods || [];
+    const warehouseRows = w.data.warehouses || [];
+    const preferredStore =
+      warehouseRows.find((row) => String(row.name).toLowerCase() === "main store") ||
+      warehouseRows[0] ||
+      null;
     setSuppliers(supplierRows);
     setProducts(p.data.products || []);
-    setWarehouses(w.data.warehouses || []);
+    setWarehouses(warehouseRows);
     setMethods(methodRows);
     setSalesmen(team.data.salesmen || []);
-    setSupplierId((prev) => prev || supplierRows[0]?.id || "");
-    setDeliverWarehouseId((prev) => prev || w.data.warehouses[0]?.id || "");
+    if (!supplierRows.length) {
+      setParty("walkin");
+      setSupplierId("");
+    } else {
+      setSupplierId((prev) => prev || supplierRows[0]?.id || "");
+    }
+    setWarehouseId((prev) => prev || preferredStore?.id || "");
+    setDeliverWarehouseId((prev) => prev || preferredStore?.id || "");
     setPaymentMethod((prev) => prev || methodRows[0]?.name || "");
   };
 
@@ -261,11 +294,14 @@ export default function PurchasingPage() {
           ...(party === "registered" ? { supplierId } : { walkInName }),
           paymentMethod,
           paidAmount: Number(paidAmount || 0),
+          deliverToStore: !dontDeliver,
+          warehouseId: dontDeliver ? null : warehouseId || null,
           items,
         },
       });
       setLines([emptyLine()]);
       setWalkInName("");
+      setDontDeliver(false);
       setFormOpen(false);
       await Promise.all([loadLookups(), loadRecords()]);
     } catch (err) {
@@ -342,15 +378,10 @@ export default function PurchasingPage() {
       <div className="topbar">
         <h1 style={{ margin: 0 }}>Purchases</h1>
         <div className="row-actions">
-          {can(user, "purchasing", "CREATE") ? (
-            <Link className="btn" to="/buy/import">
-              Import from Excel
-            </Link>
-          ) : null}
           {formOpen ? (
             <button
               type="button"
-              className="btn"
+              className="btn secondary"
               onClick={() => {
                 setFormOpen(false);
                 setError("");
@@ -359,67 +390,74 @@ export default function PurchasingPage() {
               Close form
             </button>
           ) : can(user, "purchasing", "CREATE") ? (
-            <button type="button" className="btn" onClick={() => setFormOpen(true)}>
-              Add purchase
+            <button type="button" className="btn danger" onClick={() => setFormOpen(true)}>
+              Add new purchase
             </button>
+          ) : null}
+          {isMobile ? (
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => setShowAnalysis((open) => !open)}
+            >
+              {showAnalysis ? "Hide analysis" : "Show analysis"}
+            </button>
+          ) : null}
+          {can(user, "purchasing", "CREATE") ? (
+            <Link className="btn secondary" to="/buy/import">
+              Import from Excel
+            </Link>
           ) : null}
         </div>
       </div>
 
-      <section className="purchase-analytics">
-        <article className="analytics-card">
-          <span>Not delivered</span>
-          <b>{summary.notDelivered.count}</b>
-          <small>Waiting for the store</small>
-          {itemChips(summary.notDelivered.items)}
-        </article>
-        <article className="analytics-card">
-          <span>On loading</span>
-          <b>{summary.onLoading.count}</b>
-          <small>In progress</small>
-          {itemChips(summary.onLoading.items)}
-        </article>
-        <article className="analytics-card">
-          <span>Delivered</span>
-          <b>{summary.delivered.count}</b>
-          <small>Already in warehouse</small>
-          {itemChips(summary.delivered.items)}
-        </article>
-        <article className="analytics-card">
-          <span>Unpaid</span>
-          <b>{money(unpaidTotal)}</b>
-          <small>ETB still outstanding</small>
-        </article>
-      </section>
+      {showAnalysis ? (
+        <section className="purchase-analytics">
+          <article className="analytics-card">
+            <span>Not delivered</span>
+            <b>{summary.notDelivered.count}</b>
+            <small>Waiting for the store</small>
+            {itemChips(summary.notDelivered.items)}
+          </article>
+          <article className="analytics-card">
+            <span>On loading</span>
+            <b>{summary.onLoading.count}</b>
+            <small>In progress</small>
+            {itemChips(summary.onLoading.items)}
+          </article>
+          <article className="analytics-card">
+            <span>Delivered</span>
+            <b>{summary.delivered.count}</b>
+            <small>Already in warehouse</small>
+            {itemChips(summary.delivered.items)}
+          </article>
+          <article className="analytics-card">
+            <span>Unpaid</span>
+            <b>{money(unpaidTotal)}</b>
+            <small>ETB still outstanding</small>
+          </article>
+        </section>
+      ) : null}
 
       {formOpen ? (
         <form className="card" onSubmit={submit}>
-          <div className="seg">
-            <button type="button" className={`btn ${party === "registered" ? "" : "secondary"}`} onClick={() => setParty("registered")}>
-              Registered supplier
-            </button>
-            <button type="button" className={`btn ${party === "walkin" ? "" : "secondary"}`} onClick={() => setParty("walkin")}>
-              Walk-in seller
-            </button>
-          </div>
-
-          <div className="grid split" style={{ marginTop: 14 }}>
-            {party === "registered" ? (
-              <label className="field">
-                <span>Supplier</span>
-                <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
-                  <option value="">Select supplier</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <label className="field">
-                <span>Walk-in seller name</span>
-                <input value={walkInName} onChange={(e) => setWalkInName(e.target.value)} placeholder="Name of the person you bought from" required />
-              </label>
-            )}
+          <div className="grid split" style={{ marginTop: 4 }}>
+            <PartySelectField
+              options={suppliers.map((s) => ({ id: s.id, name: s.name }))}
+              party={party}
+              onPartyChange={setParty}
+              valueId={supplierId}
+              onValueIdChange={setSupplierId}
+              walkInName={walkInName}
+              onWalkInNameChange={setWalkInName}
+              selectLabel="Supplier"
+              walkInLabel="Walk-in seller (not in list)"
+              walkInNameLabel="Walk-in seller name"
+              walkInPlaceholder="Name of the person you bought from"
+              emptySelectText="No suppliers yet"
+              registerTo="/customers?type=SUPPLIER"
+              registerLabel="Register supplier"
+            />
             <label className="field">
               <span>Payment method</span>
               <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} required>
@@ -441,6 +479,40 @@ export default function PurchasingPage() {
                 required
               />
             </label>
+            <div className="field">
+              <label className="check-inline party-walkin-check" style={{ marginBottom: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={dontDeliver}
+                  onChange={(e) => setDontDeliver(e.target.checked)}
+                />
+                <span>Don&apos;t deliver to store</span>
+              </label>
+              {!dontDeliver ? (
+                <label className="field" style={{ margin: 0 }}>
+                  <span>Deliver into store</span>
+                  <select
+                    value={warehouseId}
+                    onChange={(e) => setWarehouseId(e.target.value)}
+                    required
+                  >
+                    <option value="">Select store</option>
+                    {warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="muted">
+                    Stock goes into this store when you save. Default is Main store.
+                  </small>
+                </label>
+              ) : (
+                <small className="muted">
+                  Purchase is saved as not delivered. You can deliver into a store later.
+                </small>
+              )}
+            </div>
           </div>
 
           <h3>Items bought</h3>

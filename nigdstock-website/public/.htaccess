@@ -1,0 +1,59 @@
+# Apache / cPanel helpers for the Nigd Stock static site.
+# Place this file in the domain document root (usually public_html).
+# It is copied from public/.htaccess into out/ on every `npm run build`.
+
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Force HTTPS
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # Canonical host: nigdstock.com (no www) — matches NEXT_PUBLIC_SITE_URL
+  RewriteCond %{HTTP_HOST} ^www\.nigdstock\.com$ [NC]
+  RewriteRule ^ https://nigdstock.com%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# Pretty static 404 for unknown paths
+ErrorDocument 404 /404.html
+
+# Security headers (safe for a static marketing site)
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+</IfModule>
+
+# Compression
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+  AddOutputFilterByType DEFLATE application/javascript application/json
+  AddOutputFilterByType DEFLATE application/xml application/xhtml+xml
+  AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>
+
+# Browser caching for static assets
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType text/css "access plus 7 days"
+  ExpiresByType application/javascript "access plus 7 days"
+  ExpiresByType image/png "access plus 30 days"
+  ExpiresByType image/jpeg "access plus 30 days"
+  ExpiresByType image/webp "access plus 30 days"
+  ExpiresByType image/svg+xml "access plus 30 days"
+  ExpiresByType image/x-icon "access plus 30 days"
+  ExpiresByType application/manifest+json "access plus 7 days"
+</IfModule>
+
+# Block accidental upload of sensitive/source files
+<IfModule mod_authz_core.c>
+  <FilesMatch "(^\.env|^\.git|package(-lock)?\.json|tsconfig\.json)$">
+    Require all denied
+  </FilesMatch>
+</IfModule>

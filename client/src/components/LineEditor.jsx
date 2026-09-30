@@ -83,7 +83,7 @@ function ItemPicker({
             setQuery("");
           }
         }}
-        placeholder={listed.length ? "Type item name…" : "No items in this store"}
+        placeholder={listed.length ? "Type item name…" : "No items — add a new item first"}
         autoComplete="off"
         required={!value}
         disabled={!listed.length && !value}
@@ -92,7 +92,9 @@ function ItemPicker({
         <div className="item-picker-menu">
           {options.length === 0 ? (
             <p className="muted" style={{ margin: 0, padding: "10px 12px" }}>
-              {listed.length ? emptyText : "No items with quantity in this store."}
+              {listed.length
+                ? emptyText
+                : "No items in this store. Add a new item for sell first."}
             </p>
           ) : (
             <ul>

@@ -12,6 +12,7 @@ class ApiEndpoints {
   static const authRefresh = '/api/auth/refresh';
   static const authLogout = '/api/auth/logout';
   static const authMe = '/api/auth/me';
+  static const authDeleteAccount = '/api/auth/delete-account';
 
   static const products = '/api/products';
   static String productById(String id) => '/api/products/$id';

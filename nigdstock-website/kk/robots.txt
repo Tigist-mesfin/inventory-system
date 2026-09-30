@@ -1,0 +1,5 @@
+User-Agent: *
+Allow: /
+
+Host: https://nigdstock.com
+Sitemap: https://nigdstock.com/sitemap.xml

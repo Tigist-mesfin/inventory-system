@@ -152,6 +152,25 @@ export default function SalesPage() {
   const [vatOpen, setVatOpen] = useState(false);
   const [balanceKey, setBalanceKey] = useState(0);
   const [showAllColumns, setShowAllColumns] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 899px)").matches,
+  );
+  const [showDashboard, setShowDashboard] = useState(
+    () => typeof window === "undefined" || !window.matchMedia("(max-width: 899px)").matches,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mq = window.matchMedia("(max-width: 899px)");
+    const sync = () => {
+      const mobile = mq.matches;
+      setIsMobile(mobile);
+      setShowDashboard(!mobile);
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   const setPeriod = (period) => {
     const dates = rangeFor(period, filters.from, filters.to);
@@ -479,6 +498,20 @@ export default function SalesPage() {
           </p>
         </div>
         <div className="row-actions">
+          {can(user, "sales", "CREATE") ? (
+            <Link className="btn danger" to="/sell/new">
+              Add new sale
+            </Link>
+          ) : null}
+          {isMobile ? (
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => setShowDashboard((open) => !open)}
+            >
+              {showDashboard ? "Hide sales dashboard" : "View sales dashboard"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn secondary"
@@ -499,9 +532,6 @@ export default function SalesPage() {
           >
             Daily balance check
           </button>
-          {can(user, "sales", "CREATE") ? (
-            <Link className="btn saffron" to="/sell/new">Add new sale</Link>
-          ) : null}
         </div>
       </div>
       {error ? <p className="error">{error}</p> : null}
@@ -519,27 +549,29 @@ export default function SalesPage() {
         ))}
       </div>
 
-      <div className="purchase-analytics stock-analytics" style={{ marginBottom: 16 }}>
-        {methodStats.map((stat) => (
-          <button
-            type="button"
-            key={stat.name}
-            className={`analytics-card is-action${filters.paymentMethod === stat.name ? " is-selected" : ""}`}
-            onClick={() =>
-              setFilters({
-                ...filters,
-                paymentMethod: filters.paymentMethod === stat.name ? "" : stat.name,
-              })
-            }
-          >
-            <span>{stat.name}</span>
-            <b>{money(stat.total)}</b>
-            <small>
-              {stat.count} item{stat.count === 1 ? "" : "s"} · {qty(stat.qty)} sold
-            </small>
-          </button>
-        ))}
-      </div>
+      {showDashboard ? (
+        <div className="purchase-analytics stock-analytics" style={{ marginBottom: 16 }}>
+          {methodStats.map((stat) => (
+            <button
+              type="button"
+              key={stat.name}
+              className={`analytics-card is-action${filters.paymentMethod === stat.name ? " is-selected" : ""}`}
+              onClick={() =>
+                setFilters({
+                  ...filters,
+                  paymentMethod: filters.paymentMethod === stat.name ? "" : stat.name,
+                })
+              }
+            >
+              <span>{stat.name}</span>
+              <b>{money(stat.total)}</b>
+              <small>
+                {stat.count} item{stat.count === 1 ? "" : "s"} · {qty(stat.qty)} sold
+              </small>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="card table-wrap">
         <div className="toolbar">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, appUrl, documentVat, money, qty, vatOf, withVat } from "../../api/client";
+import { api, documentVat, money, qty, absoluteShareUrl, vatOf, withVat } from "../../api/client";
 import DesignerCredit from "../../components/DesignerCredit";
 import InventoryLoading from "../../components/InventoryLoading";
 
@@ -24,10 +24,13 @@ function invoiceShareText({ company, sale, vat, url, includeUrl = true }) {
   const lines = [
     `${company?.name || "Invoice"} · ${sale.invoiceNumber}`,
     `${who} · Total ${money(vat.total)} ETB`,
-    "",
-    "You can see the details here:",
   ];
-  if (includeUrl && url) lines.push(url);
+  if (includeUrl && url) {
+    // Blank lines + bare https URL so WhatsApp/Telegram auto-link it.
+    lines.push("", "Open receipt:", "", url);
+  } else {
+    lines.push("", "Open receipt:");
+  }
   return lines.join("\n");
 }
 
@@ -58,9 +61,13 @@ export default function InvoicePage({
   }, [id, publicSale, publicCompany]);
 
   const shareUrl = useMemo(() => {
-    if (publicShareUrl) return publicShareUrl;
+    if (publicShareUrl) {
+      const raw = String(publicShareUrl).replace(/\?.*$/, "").trim();
+      if (/^https?:\/\//i.test(raw)) return raw;
+      return absoluteShareUrl(raw);
+    }
     if (!sale?.shareToken) return "";
-    return appUrl(`/i/${sale.shareToken}`);
+    return absoluteShareUrl(`/i/${sale.shareToken}`);
   }, [publicShareUrl, sale?.shareToken]);
 
   useEffect(() => {
@@ -93,13 +100,6 @@ export default function InvoicePage({
     vatRate: sale.vatRate || company?.vatRate,
   });
   const text = invoiceShareText({ company, sale, vat, url: shareUrl });
-  const caption = invoiceShareText({
-    company,
-    sale,
-    vat,
-    url: shareUrl,
-    includeUrl: false,
-  });
   const customerPhone = ethiopianWaPhone(sale.customerPhone || sale.customer?.phone);
 
   const copyLink = async () => {
@@ -121,9 +121,17 @@ export default function InvoicePage({
   };
 
   const shareTelegram = () => {
+    // Put the https URL in the message body so it stays a tappable link after send.
+    const text = invoiceShareText({
+      company,
+      sale,
+      vat,
+      url: shareUrl,
+      includeUrl: true,
+    });
     const params = new URLSearchParams();
     if (shareUrl) params.set("url", shareUrl);
-    params.set("text", caption);
+    params.set("text", text);
     window.open(`https://t.me/share/url?${params.toString()}`, "_blank", "noopener,noreferrer");
   };
 
@@ -132,7 +140,7 @@ export default function InvoicePage({
       try {
         await navigator.share({
           title: `Invoice ${sale.invoiceNumber}`,
-          text: caption,
+          text: text,
           url: shareUrl || undefined,
         });
         return;

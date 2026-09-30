@@ -18,6 +18,7 @@ class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? _user;
   bool _loading = true;
   bool _testingConnection = false;
+  bool _deletingAccount = false;
   String? _error;
   String? _errorCode;
   String? _connectionMessage;
@@ -27,6 +28,7 @@ class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? get user => _user;
   bool get loading => _loading;
   bool get testingConnection => _testingConnection;
+  bool get deletingAccount => _deletingAccount;
   String? get error => _error;
   String? get errorCode => _errorCode;
   String? get connectionMessage => _connectionMessage;
@@ -319,6 +321,32 @@ class AuthProvider extends ChangeNotifier {
     _user = null;
     _pendingResetToken = null;
     notifyListeners();
+  }
+
+  /// Deletes the current account on the server, then clears local session state.
+  /// Returns false and sets [error] when deletion fails (account remains intact).
+  Future<bool> deleteAccount({required String password}) async {
+    if (_deletingAccount) return false;
+    _deletingAccount = true;
+    _error = null;
+    _errorCode = null;
+    _loading = true;
+    notifyListeners();
+    try {
+      await _authService.deleteAccount(password: password);
+      _user = null;
+      _pendingResetToken = null;
+      _loading = false;
+      _deletingAccount = false;
+      notifyListeners();
+      return true;
+    } catch (error) {
+      _setError(error);
+      _loading = false;
+      _deletingAccount = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<void> _maybeUpdateBaseUrl(String? baseUrl) async {

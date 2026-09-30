@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, appUrl } from "../../api/client";
+import { api, absoluteShareUrl } from "../../api/client";
 import ProformaSheet from "../../components/ProformaSheet";
 import InventoryLoading from "../../components/InventoryLoading";
 
@@ -39,7 +39,7 @@ export default function ProformaPage() {
 
   const shareUrl = useMemo(() => {
     if (!order?.shareToken) return "";
-    return appUrl(`/p/${order.shareToken}`);
+    return absoluteShareUrl(`/p/${order.shareToken}`);
   }, [order?.shareToken]);
 
   if (error) return <p className="error">{error}</p>;

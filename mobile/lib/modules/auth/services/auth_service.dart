@@ -245,6 +245,31 @@ class AuthService {
     await _tokenStorage.clearUser();
   }
 
+  /// Permanently deletes the signed-in account on the server (App Store 5.1.1(v)).
+  /// Throws on failure. Clears local session only after a successful server response.
+  Future<Map<String, dynamic>> deleteAccount({
+    required String password,
+  }) async {
+    final response = await _client.post(
+      ApiEndpoints.authDeleteAccount,
+      body: {
+        'password': password,
+        'confirm': 'DELETE',
+      },
+    );
+    final data = response['data'];
+    if (data is! Map || data['deleted'] != true) {
+      throw AppException(
+        response['message']?.toString() ??
+            'Account deletion failed. Your account was not deleted.',
+        code: 'ACCOUNT_DELETE_FAILED',
+      );
+    }
+    await _client.clearSession();
+    await _tokenStorage.clearUser();
+    return Map<String, dynamic>.from(data);
+  }
+
   bool _isAuthExpiredError(Object error) {
     final text = error.toString().toLowerCase();
     return text.contains('expired') ||
