@@ -6,6 +6,14 @@ import { useAuth } from "../../auth/AuthContext";
 import DailyBalanceCheck from "./DailyBalanceCheck";
 import VatDataSection from "./VatDataSection";
 import InventoryLoading from "../../components/InventoryLoading";
+import {
+  isKachaBridgeAvailable,
+  isKachaPaymentMethod,
+  isKachaWebView,
+  kachaStatusMessage,
+  pollKachaPayment,
+  requestKachaBridgePayment,
+} from "../../lib/kacha";
 
 const PERIODS = [
   { value: "today", label: "Today" },
@@ -306,10 +314,36 @@ export default function SalesPage() {
     setBusy(true);
     setError("");
     try {
-      await api(`/api/sales/${paying.id}/payments`, {
-        method: "POST",
-        body: { amount: Number(payAmount), paymentMethod: payMethod },
-      });
+      if (isKachaPaymentMethod(payMethod)) {
+        if (!isKachaWebView() || !isKachaBridgeAvailable()) {
+          throw new Error(
+            "Kacha payment requires opening this app inside the Kacha superapp.",
+          );
+        }
+        const payRes = await api(`/api/sales/${paying.id}/kacha/payments`, {
+          method: "POST",
+          body: { amount: Number(payAmount) },
+        });
+        const reference = payRes.data?.bridge?.reference;
+        const paymentId = payRes.data?.payment?.id;
+        if (!reference || !paymentId) {
+          throw new Error("Kacha did not return a payment reference");
+        }
+        await requestKachaBridgePayment(reference);
+        const payment = await pollKachaPayment({
+          api,
+          saleId: paying.id,
+          paymentId,
+        });
+        if (String(payment.status).toUpperCase() !== "PROCESSED") {
+          throw new Error(kachaStatusMessage(payment.status));
+        }
+      } else {
+        await api(`/api/sales/${paying.id}/payments`, {
+          method: "POST",
+          body: { amount: Number(payAmount), paymentMethod: payMethod },
+        });
+      }
       setPaying(null);
       await load();
       setBalanceKey((value) => value + 1);
@@ -792,13 +826,26 @@ export default function SalesPage() {
                   ))}
                 </select>
               </label>
+              {isKachaPaymentMethod(payMethod) ? (
+                <p className="muted">
+                  {isKachaWebView() && isKachaBridgeAvailable()
+                    ? "Opens the Kacha payment dialog. Balance updates after Kacha confirms."
+                    : "Kacha works only inside the Kacha superapp."}
+                </p>
+              ) : null}
               {error ? <p className="error">{error}</p> : null}
               <div className="modal-actions">
                 <button type="button" className="btn secondary" onClick={() => setPaying(null)} disabled={busy}>
                   Cancel
                 </button>
                 <button className="btn saffron" disabled={busy}>
-                  {busy ? "Saving…" : "Record payment"}
+                  {busy
+                    ? isKachaPaymentMethod(payMethod)
+                      ? "Waiting for Kacha…"
+                      : "Saving…"
+                    : isKachaPaymentMethod(payMethod)
+                      ? "Pay with Kacha"
+                      : "Record payment"}
                 </button>
               </div>
             </form>

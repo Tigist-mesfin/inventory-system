@@ -6,6 +6,7 @@ const tenant = require("../../shared/helpers/tenant.helper");
 const DEFAULT_PAYMENT_METHOD_NAMES = [
   "CBE",
   "Telebirr",
+  "Kacha",
   "Abyssinia Bank",
   "Dashen Bank",
   "Cooperative Bank of Oromia",

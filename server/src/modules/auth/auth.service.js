@@ -10,6 +10,7 @@ const {
   refreshAccessToken,
 } = require("../../shared/services/authCore.service");
 const otpService = require("../../shared/services/otp.service");
+const kachaApi = require("../../shared/services/kachaApi.service");
 const models = require("../../database/models");
 const phoneNormalize = require("../../shared/helpers/phoneNormalize.helper");
 const sequelize = require("../../config/db");
@@ -675,4 +676,92 @@ exports.deleteAccount = async (userId, { password }) => {
         : "Your account was permanently deleted. Company inventory and records belonging to the business were not removed.",
     };
   });
+};
+
+/**
+ * Kacha Mini App session handshake.
+ * Verifies window.session via Kacha user_kyc (server-side Basic Auth).
+ * Never trusts client-supplied name/phone. Never provisions ADMIN.
+ */
+exports.loginWithKachaSession = async ({ sessionToken }) => {
+  kachaApi.assertConfigured();
+
+  const identity = await kachaApi.exchangeSessionToken(sessionToken);
+  const phone = normalizePhone(identity.phone);
+  const fullName = String(identity.fullName || "").trim() || `Kacha ${phone}`;
+
+  let user = await authRepository.findByPhone(phone);
+
+  if (user) {
+    if (user.status === "INACTIVE" || user.status === "SUSPENDED") {
+      throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+    }
+    if (!user.role || user.role.status !== "ACTIVE") {
+      throw AppError.unauthorized("Account is not active", "ACCOUNT_INACTIVE");
+    }
+
+    // Refresh contact name from verified KYC when empty/placeholder — never change role.
+    if (
+      fullName &&
+      (!user.fullName ||
+        String(user.fullName).startsWith("Company ") ||
+        String(user.fullName).startsWith("Kacha "))
+    ) {
+      await models.User.update(
+        { fullName },
+        { where: { id: user.id }, validate: false },
+      );
+      user = await authRepository.findByIdWithRoleAndPermissions(user.id);
+    }
+
+    if (user.status === "PENDING") {
+      const activated = await authRepository.activateUser(user.id);
+      if (!activated || activated.status !== "ACTIVE") {
+        throw AppError.badRequest(
+          "Unable to activate account",
+          "ACCOUNT_ACTIVATION_FAILED",
+        );
+      }
+      const session = await issueSession(activated);
+      return { ...session, kacha: { phone, fullName, verified: true } };
+    }
+
+    const session = await issueSession(user);
+    return { ...session, kacha: { phone, fullName, verified: true } };
+  }
+
+  const takenCompany = await models.Company.findOne({ where: { phone } });
+  if (takenCompany) {
+    throw AppError.conflict(
+      "This phone is already linked to a company",
+      "COMPANY_PHONE_TAKEN",
+    );
+  }
+
+  // New Mini App users become COMPANY_OWNER — never ADMIN / platform admin.
+  const userId = await sequelize.transaction(async (transaction) =>
+    provisionCompanyOwner({
+      phone,
+      name: fullName,
+      password: randomPassword(),
+      status: "ACTIVE",
+      transaction,
+    }),
+  );
+  user = await authRepository.findByIdWithRoleAndPermissions(userId);
+  if (!user || !isLoginEligible(user)) {
+    throw AppError.badRequest(
+      "Unable to create account",
+      "ACCOUNT_PROVISION_FAILED",
+    );
+  }
+  if (user.role?.name === "ADMIN") {
+    throw AppError.forbidden(
+      "Kacha identity verification cannot grant administrator privileges",
+      "KACHA_ADMIN_FORBIDDEN",
+    );
+  }
+
+  const session = await issueSession(user);
+  return { ...session, kacha: { phone, fullName, verified: true } };
 };

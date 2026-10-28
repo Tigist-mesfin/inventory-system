@@ -153,3 +153,20 @@ exports.deleteAccount = catchAsync(async (req, res) => {
     message: result.message || "Account deleted",
   });
 });
+
+exports.kachaSession = catchAsync(async (req, res) => {
+  const result = await authService.loginWithKachaSession(req.body);
+  setAuthCookies(res, {
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
+  });
+  sendSuccess(res, {
+    data: {
+      user: result.user,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      kacha: result.kacha,
+    },
+    message: "Logged in with Kacha session",
+  });
+});

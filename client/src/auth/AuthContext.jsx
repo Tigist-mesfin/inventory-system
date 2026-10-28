@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { api } from "../api/client";
 import { markSetupGuideNeeded } from "../modules/onboarding/onboardingStorage";
 import { saveRememberedLogin } from "../modules/auth/rememberLogin";
+import { getKachaSessionToken } from "../lib/kacha";
 
 const AuthContext = createContext(null);
 const PENDING_PHONE_KEY = "ims_pending_register_phone";
@@ -54,12 +55,46 @@ function userFrom(res) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [kachaVerified, setKachaVerified] = useState(false);
 
   useEffect(() => {
-    api("/api/auth/me")
-      .then((res) => setUser(res.data?.user || null))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    const boot = async () => {
+      const sessionToken = getKachaSessionToken();
+
+      // Inside Kacha WebView, prefer verified Mini App KYC over any stale cookie session.
+      if (sessionToken) {
+        try {
+          const res = await api("/api/auth/kacha-session", {
+            method: "POST",
+            body: { sessionToken },
+          });
+          if (cancelled) return;
+          setUser(res.data?.user || null);
+          setKachaVerified(Boolean(res.data?.kacha?.verified));
+          setLoading(false);
+          return;
+        } catch {
+          // Fall through to normal /me if the token was already used/expired.
+        }
+      }
+
+      try {
+        const me = await api("/api/auth/me");
+        if (cancelled) return;
+        setUser(me.data?.user || null);
+      } catch {
+        if (!cancelled) setUser(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    boot();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const refreshUser = useCallback(async () => {
@@ -78,6 +113,7 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       loading,
+      kachaVerified,
       refreshUser,
       login: async (username, password, { remember = true } = {}) => {
         const nextUser = userFrom(
@@ -148,9 +184,10 @@ export function AuthProvider({ children }) {
       logout: async () => {
         await api("/api/auth/logout", { method: "POST" });
         setUser(null);
+        setKachaVerified(false);
       },
     }),
-    [user, loading, refreshUser],
+    [user, loading, kachaVerified, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -50,3 +50,8 @@ exports.deleteAccountSchema = Joi.object({
     "any.only": 'Type DELETE to confirm permanent account deletion',
   }),
 });
+
+/** Kacha Mini App WebView session (window.session → backend KYC). */
+exports.kachaSessionSchema = Joi.object({
+  sessionToken: Joi.string().trim().min(8).max(512).required(),
+});

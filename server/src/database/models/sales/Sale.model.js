@@ -201,6 +201,15 @@ module.exports = (sequelize, DataTypes) => {
       onDelete: "CASCADE",
       onUpdate: "CASCADE",
     });
+
+    if (models.KachaPayment) {
+      Sale.hasMany(models.KachaPayment, {
+        foreignKey: "saleId",
+        as: "kachaPayments",
+        onDelete: "RESTRICT",
+        onUpdate: "CASCADE",
+      });
+    }
   };
 
   return Sale;

@@ -7,6 +7,14 @@ import InventoryLoading from "../../components/InventoryLoading";
 import { useAuth } from "../../auth/AuthContext";
 import { can, isSalesman } from "../../auth/access";
 import PartySelectField from "../../components/PartySelectField";
+import {
+  isKachaBridgeAvailable,
+  isKachaPaymentMethod,
+  isKachaWebView,
+  kachaStatusMessage,
+  pollKachaPayment,
+  requestKachaBridgePayment,
+} from "../../lib/kacha";
 
 const qtyInStore = (row, warehouseId) => {
   if (!warehouseId) return Number(row.quantity || 0);
@@ -57,6 +65,7 @@ export default function SaleFormPage() {
   const [inventory, setInventory] = useState([]);
   const [party, setParty] = useState("registered");
   const [paidAmount, setPaidAmount] = useState("");
+  const [payStatus, setPayStatus] = useState("");
   const [form, setForm] = useState({
     warehouseId: "",
     customerId: "",
@@ -277,10 +286,26 @@ export default function SaleFormPage() {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setPayStatus("");
     try {
       if (!filledItems.length) throw new Error("Add at least one item");
       validateStock();
       validateLots();
+
+      const useKacha =
+        payFrom === "direct" && isKachaPaymentMethod(form.paymentMethod);
+
+      if (useKacha && editing) {
+        throw new Error("Use Record payment on the sales list to collect a Kacha balance.");
+      }
+
+      if (useKacha) {
+        if (!isKachaWebView() || !isKachaBridgeAvailable()) {
+          throw new Error(
+            "Kacha payment requires opening this app inside the Kacha superapp. Use Cash or another method in a regular browser.",
+          );
+        }
+      }
 
       let amountPaid = paidAmount;
       if (payFrom === "wallet") {
@@ -294,6 +319,9 @@ export default function SaleFormPage() {
           amountPaid = String(Math.min(walletBalance, grandTotal).toFixed(2));
           setPaidAmount(amountPaid);
         }
+      } else if (useKacha) {
+        amountPaid = String(grandTotal.toFixed(2));
+        setPaidAmount(amountPaid);
       } else if (amountPaid === "") {
         amountPaid = String(grandTotal.toFixed(2));
         setPaidAmount(amountPaid);
@@ -339,6 +367,42 @@ export default function SaleFormPage() {
           method: "POST",
           body: saleBody,
         });
+      } else if (useKacha) {
+        // Keep sale DRAFT until Kacha callback confirms payment (stock posts then).
+        const created = await api("/api/sales", {
+          method: "POST",
+          body: {
+            warehouseId: saleBody.warehouseId,
+            customerId: saleBody.customerId,
+            customerName: saleBody.customerName,
+            paymentMethod: "Kacha",
+            items: saleBody.items.map((item) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+            })),
+          },
+        });
+        const saleId = created.data.sale.id;
+        setPayStatus("Creating Kacha payment request…");
+        const payRes = await api(`/api/sales/${saleId}/kacha/payments`, {
+          method: "POST",
+          body: {},
+        });
+        const reference = payRes.data?.bridge?.reference;
+        const paymentId = payRes.data?.payment?.id;
+        if (!reference || !paymentId) {
+          throw new Error("Kacha did not return a payment reference");
+        }
+        setPayStatus("Open the Kacha payment dialog…");
+        await requestKachaBridgePayment(reference);
+        setPayStatus("Waiting for payment confirmation…");
+        const payment = await pollKachaPayment({ api, saleId, paymentId });
+        if (String(payment.status).toUpperCase() !== "PROCESSED") {
+          throw new Error(kachaStatusMessage(payment.status));
+        }
+        setPayStatus(kachaStatusMessage("PROCESSED"));
+        saved = await api(`/api/sales/${saleId}`);
       } else {
         const created = await api("/api/sales", {
           method: "POST",
@@ -371,10 +435,14 @@ export default function SaleFormPage() {
       navigate(`/sell/${saved.data.sale.id}`);
     } catch (err) {
       setError(err.message);
+      setPayStatus("");
     } finally {
       setBusy(false);
     }
   };
+
+  const kachaSelected =
+    payFrom === "direct" && isKachaPaymentMethod(form.paymentMethod);
 
   if (!ready) return <InventoryLoading message="Loading inventory..." />;
 
@@ -507,6 +575,13 @@ export default function SaleFormPage() {
             <input value="Wallet" readOnly />
           </label>
         )}
+        {kachaSelected ? (
+          <p className="muted" style={{ marginTop: 0 }}>
+            {isKachaWebView() && isKachaBridgeAvailable()
+              ? "Kacha will charge the signed-in superapp wallet. Stock updates only after payment is confirmed."
+              : "Kacha payment works only inside the Kacha superapp. In a regular browser, choose another payment method."}
+          </p>
+        ) : null}
       </div>
 
       <h3>Items sold</h3>
@@ -589,36 +664,53 @@ export default function SaleFormPage() {
 
       <VatSummary lines={filledItems} products={products} />
 
-      <label className="field" style={{ marginTop: 16 }}>
-        <span>Amount paid (ETB)</span>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          max={grandTotal || undefined}
-          value={paidAmount}
-          onChange={(e) => setPaidAmount(e.target.value)}
-          placeholder={money(grandTotal)}
-        />
-      </label>
-      <p className={remaining > 0 ? "error" : "muted"}>
-        Remaining to pay: <strong>{money(remaining)} ETB</strong>
-        {remaining > 0 && party === "registered"
-          ? " — this customer will be recorded as partially paid."
-          : remaining > 0
-            ? " — remaining balance is kept on this invoice."
-            : filledItems.length
-              ? " — fully paid."
-              : ""}
-      </p>
+      {!kachaSelected ? (
+        <label className="field" style={{ marginTop: 16 }}>
+          <span>Amount paid (ETB)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            max={grandTotal || undefined}
+            value={paidAmount}
+            onChange={(e) => setPaidAmount(e.target.value)}
+            placeholder={money(grandTotal)}
+          />
+        </label>
+      ) : (
+        <p className="muted" style={{ marginTop: 16 }}>
+          Amount charged via Kacha: <strong>{money(grandTotal)} ETB</strong>
+        </p>
+      )}
+      {!kachaSelected ? (
+        <p className={remaining > 0 ? "error" : "muted"}>
+          Remaining to pay: <strong>{money(remaining)} ETB</strong>
+          {remaining > 0 && party === "registered"
+            ? " — this customer will be recorded as partially paid."
+            : remaining > 0
+              ? " — remaining balance is kept on this invoice."
+              : filledItems.length
+                ? " — fully paid."
+                : ""}
+        </p>
+      ) : null}
 
+      {payStatus ? <p className="muted">{payStatus}</p> : null}
       {error ? <p className="error">{error}</p> : null}
       <div className="row-actions sale-form-actions" style={{ marginTop: 16 }}>
         <button type="button" className="btn secondary" onClick={() => navigate("/sell")} disabled={busy}>
           Cancel
         </button>
         <button className="btn saffron" disabled={busy || !filledItems.length}>
-          {busy ? "Saving sale…" : editing ? "Save changes" : "Save sale"}
+          {busy
+            ? kachaSelected
+              ? "Waiting for Kacha…"
+              : "Saving sale…"
+            : editing
+              ? "Save changes"
+              : kachaSelected
+                ? "Pay with Kacha"
+                : "Save sale"}
         </button>
       </div>
     </form>

@@ -441,9 +441,9 @@ exports.update = async (id, payload, user) => {
   });
 };
 
-exports.complete = async (id, user, extras = {}) => {
+exports.complete = async (id, user, extras = {}, options = {}) => {
   const userId = user.id;
-  return sequelize.transaction(async (transaction) => {
+  const run = async (transaction) => {
     const sale = await saleRepository.findByIdForUpdate(id, transaction);
     tenant.assertOwned(user, sale, "Sale not found");
     tenant.assertWarehouseAccess(user, sale.warehouseId);
@@ -500,6 +500,8 @@ exports.complete = async (id, user, extras = {}) => {
         );
       }
       sale.paymentMethod = "WALLET";
+    } else if (extras.paymentMethod) {
+      sale.paymentMethod = extras.paymentMethod;
     }
 
     const remaining = decimal.subMoney(sale.totalAmount, paid);
@@ -526,12 +528,15 @@ exports.complete = async (id, user, extras = {}) => {
     await sale.save({ transaction });
     const saved = await saleRepository.findById(id, transaction);
     return saleRepository.toPublic(saved);
-  });
+  };
+
+  if (options.transaction) return run(options.transaction);
+  return sequelize.transaction(run);
 };
 
-exports.recordPayment = async (id, payload, user) => {
+exports.recordPayment = async (id, payload, user, options = {}) => {
   const userId = user.id;
-  return sequelize.transaction(async (transaction) => {
+  const run = async (transaction) => {
     const sale = await saleRepository.findByIdForUpdate(id, transaction);
     tenant.assertOwned(user, sale, "Sale not found");
     tenant.assertWarehouseAccess(user, sale.warehouseId);
@@ -564,7 +569,10 @@ exports.recordPayment = async (id, payload, user) => {
 
     const saved = await saleRepository.findById(id, transaction);
     return saleRepository.toPublic(saved);
-  });
+  };
+
+  if (options.transaction) return run(options.transaction);
+  return sequelize.transaction(run);
 };
 
 exports.revise = async (id, payload, user) => {

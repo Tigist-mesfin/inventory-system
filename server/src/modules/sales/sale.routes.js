@@ -11,6 +11,7 @@ const multer = require("multer");
 const authenticate = require("../auth/auth.middleware");
 const { authorizePermission } = require("../auth/auth.middleware");
 const controller = require("./sale.controller");
+const kachaPaymentController = require("./kacha-payment.controller");
 const {
   listQuerySchema,
   idParamSchema,
@@ -22,6 +23,10 @@ const {
   reviseSchema,
   syncSchema,
 } = require("./sale.validation");
+const {
+  createKachaPaymentSchema,
+  paymentIdParamSchema,
+} = require("./kacha-payment.validation");
 
 const quoteQuerySchema = Joi.object({
   customerId: Joi.string().uuid({ version: "uuidv4" }),
@@ -121,6 +126,28 @@ router.post(
   validateParams(idParamSchema),
   validateBody(paySchema),
   controller.recordPayment,
+);
+
+router.post(
+  "/:id/kacha/payments",
+  authorizePermission("sales", "CREATE"),
+  validateParams(idParamSchema),
+  validateBody(createKachaPaymentSchema),
+  kachaPaymentController.createPaymentRequest,
+);
+
+router.get(
+  "/:id/kacha/payments",
+  authorizePermission("sales", "READ"),
+  validateParams(idParamSchema),
+  kachaPaymentController.listPaymentsForSale,
+);
+
+router.get(
+  "/:id/kacha/payments/:paymentId",
+  authorizePermission("sales", "READ"),
+  validateParams(paymentIdParamSchema),
+  kachaPaymentController.getPayment,
 );
 
 router.post(

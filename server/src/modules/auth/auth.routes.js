@@ -17,6 +17,7 @@ const {
   verifyOtpSchema,
   resetPasswordSchema,
   deleteAccountSchema,
+  kachaSessionSchema,
 } = require("./auth.validation");
 
 router.post(
@@ -45,6 +46,13 @@ router.post(
   loginLimiter,
   validateBody(loginSchema),
   controller.login,
+);
+
+router.post(
+  "/kacha-session",
+  loginLimiter,
+  validateBody(kachaSessionSchema),
+  controller.kachaSession,
 );
 
 router.post(

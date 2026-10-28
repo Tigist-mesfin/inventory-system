@@ -41,5 +41,6 @@ router.use("/other-incomes", require("./finance/other-income.routes"));
 router.use("/ai", require("./ai/ai.routes"));
 router.use("/company-profile", require("./system/company.routes"));
 router.use("/platform", require("./platform/platform.routes"));
+router.use("/webhooks", require("./webhooks"));
 
 module.exports = router;

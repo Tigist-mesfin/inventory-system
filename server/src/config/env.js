@@ -60,4 +60,30 @@ module.exports = {
   GEEZ_SMS_TOKEN: process.env.GEEZ_SMS_TOKEN || "",
   GEEZ_SMS_SHORTCODE_ID: process.env.GEEZ_SMS_SHORTCODE_ID || "",
   LOG_OTP: process.env.LOG_OTP === "true",
+
+  /**
+   * Kacha Mini App (server-side only).
+   * Docs: https://docs.kacha.et/v1/
+   * Paths under base: /orgs/miniapps/user_kyc, /orgs/payment/request/in_app
+   * Confirm the production API host with Kacha — docs host is not the API.
+   * Read live from process.env so tests / staging toggles work without reload.
+   */
+  get KACHA_API_BASE_URL() {
+    return (
+      process.env.KACHA_API_BASE_URL || "https://api.kacha.et/api/v1"
+    ).replace(/\/+$/, "");
+  },
+  get KACHA_API_USERNAME() {
+    return process.env.KACHA_API_USERNAME || "";
+  },
+  get KACHA_API_PASSWORD() {
+    return process.env.KACHA_API_PASSWORD || "";
+  },
+  /** Absolute public URL Kacha will POST payment status to. */
+  get KACHA_CALLBACK_URL() {
+    return process.env.KACHA_CALLBACK_URL || "";
+  },
+  get KACHA_ENABLED() {
+    return process.env.KACHA_ENABLED === "true";
+  },
 };

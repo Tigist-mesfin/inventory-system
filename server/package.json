@@ -11,7 +11,7 @@
     "dev": "nodemon index.js",
     "client": "npm --prefix client run dev",
     "client:build": "npm --prefix client run build",
-    "test": "NODE_ENV=test node --test --test-concurrency=1 tests/auth.session.test.js tests/auth.rbac.test.js tests/auth.account-deletion.test.js tests/catalog.test.js tests/ai.analytics.test.js",
+    "test": "NODE_ENV=test node --test --test-concurrency=1 tests/auth.session.test.js tests/auth.rbac.test.js tests/auth.account-deletion.test.js tests/catalog.test.js tests/ai.analytics.test.js tests/kacha.integration.test.js",
     "migrate": "sequelize-cli db:migrate",
     "migrate:undo": "sequelize-cli db:migrate:undo",
     "seed": "node src/database/seeders/runSeed.js",
